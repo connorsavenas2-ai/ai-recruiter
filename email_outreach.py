@@ -1,29 +1,72 @@
 """
-Email outreach engine — sends personalized candidate outreach, follow-ups,
-interview confirmations, and rejections via Gmail.
+Email outreach engine — sends via Gmail API (OAuth, no app password needed).
+Falls back to SMTP app password if Gmail API is not authorized yet.
 """
 
-import smtplib
+import base64
 import json
+import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from config import OUTREACH_EMAIL, GMAIL_APP_PASSWORD, YOUR_NAME, COMPANY_NAME, CALENDLY_BOOKING_LINK, get_ai_client
 
 
-def _send(to: str, subject: str, html_body: str, text_body: str = "") -> bool:
+def _send_gmail_api(to: str, subject: str, html_body: str, text_body: str = "") -> bool:
+    """Send via Gmail API — free, no app password needed. Requires google_token.pickle."""
+    from google_auth import get_gmail_service
+    service = get_gmail_service()
+
+    msg = MIMEMultipart("alternative")
+    msg["Subject"] = subject or ""
+    msg["From"]    = f"Jenny | {COMPANY_NAME} <{OUTREACH_EMAIL}>"
+    msg["To"]      = to
+    if text_body:
+        msg.attach(MIMEText(text_body, "plain"))
+    if html_body:
+        msg.attach(MIMEText(html_body, "html"))
+    else:
+        msg.attach(MIMEText(text_body or subject, "plain"))
+
+    raw = base64.urlsafe_b64encode(msg.as_bytes()).decode()
+    service.users().messages().send(userId="me", body={"raw": raw}).execute()
+    return True
+
+
+def _send_smtp(to: str, subject: str, html_body: str, text_body: str = "") -> bool:
+    """Fallback: SMTP with app password."""
     msg = MIMEMultipart("alternative")
     msg["Subject"] = subject
-    msg["From"]    = f"{YOUR_NAME} Recruiting <{OUTREACH_EMAIL}>"
+    msg["From"]    = f"Jenny | {COMPANY_NAME} <{OUTREACH_EMAIL}>"
     msg["To"]      = to
-
     if text_body:
         msg.attach(MIMEText(text_body, "plain"))
     msg.attach(MIMEText(html_body, "html"))
-
     with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
         server.login(OUTREACH_EMAIL, GMAIL_APP_PASSWORD)
         server.sendmail(OUTREACH_EMAIL, to, msg.as_string())
     return True
+
+
+def _send(to: str, subject: str, html_body: str, text_body: str = "") -> bool:
+    """
+    Smart send: tries Gmail API first (free, no app password),
+    falls back to SMTP if not yet authorized.
+    """
+    from pathlib import Path
+    # Try Gmail API first
+    if Path("google_token.pickle").exists():
+        try:
+            return _send_gmail_api(to, subject, html_body, text_body)
+        except Exception as e:
+            print(f"[EMAIL] Gmail API failed ({e}), trying SMTP...")
+
+    # Fall back to SMTP
+    if GMAIL_APP_PASSWORD:
+        return _send_smtp(to, subject, html_body, text_body)
+
+    print(f"[EMAIL] No auth configured. Run: python google_auth.py")
+    print(f"[EMAIL] Would have sent to {to}: {subject}")
+    return False
 
 
 def generate_outreach_email(

@@ -16,20 +16,28 @@ TOKEN_FILE = "google_token.pickle"
 
 
 def get_calendar_service():
+    """Uses shared google_token.pickle — authorized once via google_auth.py."""
+    try:
+        from google_auth import get_calendar_service as _get
+        return _get()
+    except Exception:
+        pass
+
+    # Legacy fallback: credentials.json flow
     creds = None
     if os.path.exists(TOKEN_FILE):
         with open(TOKEN_FILE, "rb") as f:
             creds = pickle.load(f)
-
     if not creds or not creds.valid:
         if creds and creds.expired and creds.refresh_token:
             creds.refresh(Request())
-        else:
+        elif os.path.exists(GOOGLE_CREDS_FILE):
             flow = InstalledAppFlow.from_client_secrets_file(GOOGLE_CREDS_FILE, SCOPES)
             creds = flow.run_local_server(port=0)
-        with open(TOKEN_FILE, "wb") as f:
-            pickle.dump(creds, f)
-
+            with open(TOKEN_FILE, "wb") as f:
+                pickle.dump(creds, f)
+        else:
+            raise RuntimeError("Google not authorized. Run: python google_auth.py")
     return build("calendar", "v3", credentials=creds)
 
 

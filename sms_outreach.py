@@ -3,17 +3,32 @@ SMS outreach via Twilio — sends texts to candidates after screening calls,
 follow-ups, and Calendly booking links.
 """
 
-from twilio.rest import Client
+"""
+SMS via free email-to-carrier gateways (default) or Twilio (if configured).
+No account or payment needed for the free gateway approach.
+"""
 from config import TWILIO_SID, TWILIO_TOKEN, TWILIO_PHONE, YOUR_NAME, COMPANY_NAME, CALENDLY_BOOKING_LINK
+import os
 
 
-def _client():
-    return Client(TWILIO_SID, TWILIO_TOKEN)
+def send_sms(to: str, message: str, carrier: str = "") -> str:
+    """
+    Send SMS. Uses free carrier email gateways by default.
+    Falls back to Twilio if TWILIO_ACCOUNT_SID is set.
+    """
+    if TWILIO_SID:
+        try:
+            from twilio.rest import Client
+            msg = Client(TWILIO_SID, TWILIO_TOKEN).messages.create(
+                body=message, from_=TWILIO_PHONE, to=to)
+            return msg.sid
+        except Exception as e:
+            print(f"[SMS] Twilio failed ({e}), trying free gateway...")
 
-
-def send_sms(to: str, message: str) -> str:
-    msg = _client().messages.create(body=message, from_=TWILIO_PHONE, to=to)
-    return msg.sid
+    # Free gateway fallback
+    from free_sms import send_free_sms
+    send_free_sms(to, message, carrier)
+    return "free-gateway"
 
 
 def sms_calendly_link(candidate_name: str, phone: str, job_title: str) -> str:
