@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>{% block title %}ATS{% endblock %} — Connor Savenas</title>
+<title>{% block title %}ATS{% endblock %} — {{ company_name }}</title>
 <link rel="stylesheet" href="/ats/static/style.css">
 </head>
 <body>
@@ -12,8 +12,8 @@
   <!-- SIDEBAR -->
   <aside class="sidebar">
     <div class="sidebar-brand">
-      <h1>Connor's ATS</h1>
-      <span>Hiring Pipeline</span>
+      <h1>{{ company_name }}</h1>
+      <span>Hiring Dashboard</span>
     </div>
     <nav class="sidebar-nav">
       <div class="nav-section">Main</div>
@@ -46,8 +46,20 @@
         <span class="icon">🤖</span> AI Recruiter
       </a>
     </nav>
-    <div class="sidebar-footer">
-      <span id="sb-time"></span>
+    <div class="sidebar-footer" style="display:flex;align-items:center;gap:10px">
+      <div style="width:30px;height:30px;border-radius:50%;background:rgba(255,255,255,.15);
+                  display:flex;align-items:center;justify-content:center;
+                  font-weight:800;font-size:13px;flex-shrink:0">
+        {{ current_user.avatar if current_user else '?' }}
+      </div>
+      <div style="flex:1;min-width:0">
+        <div style="font-size:12px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">
+          {{ current_user.display_name if current_user else 'Guest' }}
+        </div>
+        <div style="font-size:10px;opacity:.5" id="sb-time"></div>
+      </div>
+      <a href="/ats/logout" style="opacity:.5;font-size:16px;text-decoration:none;color:white"
+         title="Sign out">⏻</a>
     </div>
   </aside>
 

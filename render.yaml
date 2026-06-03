@@ -1,0 +1,52 @@
+services:
+  - type: web
+    name: hiring-dashboard
+    runtime: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn "ats.app:app" --bind 0.0.0.0:$PORT --workers 2 --timeout 120
+    healthCheckPath: /ats/login
+    envVars:
+      # Set these in Render dashboard → Environment
+      - key: AIRTABLE_API_KEY
+        sync: false
+      - key: AIRTABLE_BASE_ID
+        sync: false
+      - key: AIRTABLE_CANDIDATES_TABLE
+        value: Candidates
+      - key: AIRTABLE_JOBS_TABLE
+        value: Jobs
+      - key: AIRTABLE_CALLS_TABLE
+        value: Call_Logs
+      - key: GROQ_API_KEY
+        sync: false
+      - key: FLASK_SECRET_KEY
+        generateValue: true
+      - key: COMPANY_NAME
+        value: Connor Savenas Ventures
+      # Your account
+      - key: ADMIN_USERNAME
+        value: connor
+      - key: ADMIN_PASSWORD
+        sync: false
+      - key: ADMIN_DISPLAY_NAME
+        value: Connor
+      - key: ADMIN_AVATAR
+        value: C
+      # Girlfriend's account
+      - key: USER2_USERNAME
+        sync: false
+      - key: USER2_PASSWORD
+        sync: false
+      - key: USER2_DISPLAY_NAME
+        sync: false
+      - key: USER2_AVATAR
+        sync: false
+      # Email (optional — for sending from the web app)
+      - key: OUTREACH_EMAIL
+        value: connorsavenas2@gmail.com
+      - key: GMAIL_APP_PASSWORD
+        sync: false
+      - key: CALENDLY_BOOKING_LINK
+        sync: false
+      - key: YOUR_NAME
+        value: Connor Savenas

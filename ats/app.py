@@ -1,29 +1,67 @@
 """
-Connor's ATS — full applicant tracking system.
-Run: python ats/app.py
-Open: http://localhost:5057
+Hiring Dashboard — full ATS web app.
+Run locally:  python ats/app.py
+Deploy:       see render.yaml
 """
 
-import sys, json
+import sys, json, os
 from pathlib import Path
-from datetime import datetime
+from datetime import datetime, timedelta
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from flask import Flask, render_template, request, jsonify, redirect
+from flask import Flask, render_template, request, jsonify, redirect, session
 from flask_cors import CORS
 import requests as req
 
 from config import AIRTABLE_API_KEY, AIRTABLE_BASE_ID, AIRTABLE_CANDIDATES, AIRTABLE_JOBS
 import airtable_ats as ats
-import candidate_scorer as scorer
 import email_outreach as email_out
+from ats.auth import verify_login, login_user, logout_user, current_user, login_required
+
+COMPANY_NAME = os.getenv("COMPANY_NAME", "Connor Savenas Ventures")
 
 app = Flask(__name__, template_folder="templates", static_folder="static",
             static_url_path="/ats/static")
+app.secret_key = os.getenv("FLASK_SECRET_KEY", "dev-secret-change-in-production-abc123xyz")
+app.permanent_session_lifetime = timedelta(days=30)
 CORS(app)
 
 AT_HEADERS = {"Authorization": f"Bearer {AIRTABLE_API_KEY}", "Content-Type": "application/json"}
+
+
+def _render(template, **kwargs):
+    """Render with auth context injected into every template."""
+    return render_template(template,
+                           current_user=current_user(),
+                           company_name=COMPANY_NAME,
+                           **kwargs)
+
+
+# ── AUTH ROUTES ───────────────────────────────────────────────────────────────
+
+@app.route("/ats/login", methods=["GET", "POST"])
+def login():
+    if current_user():
+        return redirect("/ats/")
+    error = None
+    next_url = request.args.get("next") or request.form.get("next") or "/ats/"
+    if request.method == "POST":
+        username = request.form.get("username", "").strip()
+        password = request.form.get("password", "")
+        user = verify_login(username, password)
+        if user:
+            login_user(user["username"], user["display_name"], user["role"], user["avatar"])
+            return redirect(next_url)
+        error = "Invalid username or password."
+    return render_template("login.html", error=error, next=next_url,
+                           company_name=COMPANY_NAME)
+
+
+@app.route("/ats/logout")
+def logout():
+    logout_user()
+    return redirect("/ats/login")
 
 
 def _at_get(table, params=None):
@@ -81,17 +119,19 @@ def _map_job(r):
 
 @app.route("/ats/")
 @app.route("/ats")
+@login_required
 def dashboard():
-    return render_template("dashboard.html", page="dashboard",
-                           hour=datetime.now().hour)
+    return _render("dashboard.html", page="dashboard", hour=datetime.now().hour)
 
 
 @app.route("/ats/candidates")
+@login_required
 def candidates_page():
-    return render_template("candidates.html", page="candidates")
+    return _render("candidates.html", page="candidates")
 
 
 @app.route("/ats/candidates/<record_id>")
+@login_required
 def candidate_detail(record_id):
     resp = req.get(
         f"https://api.airtable.com/v0/{AIRTABLE_BASE_ID}/{AIRTABLE_CANDIDATES}/{record_id}",
@@ -100,43 +140,47 @@ def candidate_detail(record_id):
     if resp.status_code != 200:
         return redirect("/ats/candidates")
     candidate = _map_candidate(resp.json())
-    return render_template("candidate_detail.html", page="candidates",
-                           candidate=candidate)
+    return _render("candidate_detail.html", page="candidates", candidate=candidate)
 
 
 @app.route("/ats/jobs")
+@login_required
 def jobs_page():
-    return render_template("jobs.html", page="jobs")
+    return _render("jobs.html", page="jobs")
 
 
 @app.route("/ats/jobs/new")
+@login_required
 def new_job_page():
-    return render_template("new_job.html", page="jobs")
+    return _render("new_job.html", page="jobs")
 
 
 @app.route("/ats/jobs/<record_id>")
+@login_required
 def job_detail(record_id):
-    # Simple redirect to jobs for now — full job detail page is a future add
     return redirect("/ats/jobs")
 
 
 @app.route("/ats/pipeline")
+@login_required
 def pipeline_page():
-    return render_template("pipeline.html", page="pipeline")
+    return _render("pipeline.html", page="pipeline")
 
 
 @app.route("/ats/analytics")
+@login_required
 def analytics_page():
-    return render_template("analytics.html", page="analytics")
+    return _render("analytics.html", page="analytics")
 
 
 @app.route("/ats/outreach")
+@login_required
 def outreach_page():
-    return render_template("outreach.html", page="outreach") if Path(
-        "ats/templates/outreach.html").exists() else redirect("/ats/")
+    return redirect("/ats/")
 
 
 @app.route("/ats/interviews")
+@login_required
 def interviews_page():
     return redirect("/ats/")
 
