@@ -19,6 +19,7 @@ import airtable_ats as ats
 import email_outreach as email_out
 import candidate_scorer as scorer
 from config import CALENDLY_BOOKING_LINK
+from scheduling import start_scheduler, handle_cancellation, send_calendly_to_qualified
 
 app = Flask(__name__)
 CORS(app)
@@ -83,8 +84,10 @@ def new_application():
 
                 # 3. Act on score
                 if score >= 7:
-                    email_out.send_qualified_email(name, email_addr, job_title, summary)
-                    print(f"[EMAIL] Sent Calendly invite to {name}")
+                    record = ats.get_candidate_by_email(email_addr)
+                    rid    = record["id"] if record else ""
+                    send_calendly_to_qualified(rid, name, email_addr, phone, job_title)
+                    print(f"[EMAIL+SMS] Sent Calendly invite to {name}")
                 elif score <= 4:
                     email_out.send_rejection_email(name, email_addr, job_title)
                     print(f"[EMAIL] Sent rejection to {name}")
@@ -137,7 +140,17 @@ def calendly_webhook():
         print(f"[ACTION] Interview confirmed: {name} at {formatted}")
 
     elif event == "invitee.canceled":
-        print(f"[CALENDLY] {name} canceled")
+        print(f"[CALENDLY] {name} canceled — sending rebook offer")
+        cand  = ats.get_candidate_by_email(email_addr)
+        phone = cand["fields"].get("Phone", "") if cand else ""
+        threading.Thread(
+            target=handle_cancellation,
+            args=(name, email_addr, "your upcoming interview", phone),
+            daemon=True
+        ).start()
+        if cand:
+            ats.update_candidate(cand["id"], {"Calendly_Booked": False,
+                                               "Status": "Qualified"})
 
     return jsonify({"ok": True})
 
@@ -180,9 +193,11 @@ def index():
 
 
 if __name__ == "__main__":
-    print("\n AI Recruiter Webhook Server (Free Mode)")
+    start_scheduler()   # start reminders, follow-ups, no-show detection
+    print("\n AI Recruiter + Jenny Webhook Server")
     print("=" * 42)
     print("  Running on: http://localhost:5055")
     print("  Expose with: ngrok http 5055")
+    print("  Scheduler: booking follow-ups, 24hr/1hr reminders, no-show detection")
     print("  Then paste ngrok URL into .env as WEBHOOK_BASE_URL\n")
     app.run(host="0.0.0.0", port=5055, debug=False)
