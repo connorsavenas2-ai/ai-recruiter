@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Apply — {{ job.title }} | {{ company_name }}</title>
+<style>
+*, *::before, *::after { box-sizing:border-box; margin:0; padding:0; }
+body { font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
+       background:#f0f4f8; min-height:100vh; padding:40px 20px; }
+.container { max-width:620px; margin:0 auto; }
+.header { background:linear-gradient(135deg,#0f1e3d,#1e40af); color:white;
+          border-radius:14px 14px 0 0; padding:32px; }
+.header h1 { font-size:22px; font-weight:800; margin-bottom:6px; }
+.header p  { font-size:13px; opacity:.75; }
+.tags { display:flex; gap:8px; margin-top:14px; flex-wrap:wrap; }
+.tag { background:rgba(255,255,255,.15); padding:4px 12px; border-radius:20px;
+       font-size:12px; font-weight:600; }
+.jenny-bar { background:white; border-left:1px solid #e2e8f0; border-right:1px solid #e2e8f0;
+             padding:16px 24px; display:flex; gap:14px; align-items:center; }
+.j-avatar { width:44px; height:44px; border-radius:50%; flex-shrink:0;
+            background:linear-gradient(135deg,#0f1e3d,#2563eb); color:white;
+            display:flex; align-items:center; justify-content:center;
+            font-weight:800; font-size:18px; }
+.j-text { font-size:13px; color:#334155; line-height:1.6; }
+.card { background:white; border:1px solid #e2e8f0; border-top:none;
+        border-radius:0 0 14px 14px; padding:28px 32px; }
+.form-group { margin-bottom:18px; }
+label { display:block; font-size:12px; font-weight:700; color:#475569;
+        text-transform:uppercase; letter-spacing:.5px; margin-bottom:6px; }
+input, select, textarea { width:100%; padding:11px 14px; border:1.5px solid #e2e8f0;
+  border-radius:8px; font-size:14px; outline:none; transition:border-color .15s; }
+input:focus, select:focus, textarea:focus { border-color:#2563eb; }
+textarea { min-height:100px; resize:vertical; }
+.upload-area { border:2px dashed #cbd5e1; border-radius:8px; padding:28px;
+               text-align:center; cursor:pointer; transition:all .15s; }
+.upload-area:hover { border-color:#2563eb; background:#f0f9ff; }
+.upload-area p { font-size:13px; color:#64748b; margin-top:6px; }
+.btn { width:100%; padding:14px; background:linear-gradient(135deg,#1d4ed8,#2563eb);
+       color:white; border:none; border-radius:8px; font-size:15px; font-weight:700;
+       cursor:pointer; transition:all .15s; margin-top:6px; }
+.btn:hover { transform:translateY(-1px); box-shadow:0 6px 20px rgba(37,99,235,.35); }
+.btn:disabled { opacity:.5; cursor:not-allowed; transform:none; }
+.disclaimer { font-size:11px; color:#94a3b8; text-align:center; margin-top:14px; }
+.success { display:none; text-align:center; padding:50px 20px; }
+.success h2 { font-size:22px; font-weight:800; color:#0f172a; margin:16px 0 8px; }
+.success p  { font-size:14px; color:#64748b; line-height:1.7; }
+</style>
+</head>
+<body>
+<div class="container">
+  <div class="header">
+    <div style="font-size:12px;opacity:.6;margin-bottom:8px">{{ company_name }}</div>
+    <h1>{{ job.title }}</h1>
+    <p>{{ job.description[:120] }}{% if job.description|length > 120 %}…{% endif %}</p>
+    <div class="tags">
+      <span class="tag">{{ job.type | replace('_', ' ') }}</span>
+      {% if job.pay %}<span class="tag">{{ job.pay }}</span>{% endif %}
+      <span class="tag">Remote</span>
+    </div>
+  </div>
+
+  <div class="jenny-bar">
+    <div class="j-avatar">J</div>
+    <div class="j-text">
+      <strong>Hi! I'm Jenny</strong>, the AI recruiting assistant for {{ company_name }}.
+      Fill out this quick form and I'll reach out within 24 hours to learn more about you. 🙂
+    </div>
+  </div>
+
+  <div class="card">
+    <form id="apply-form" onsubmit="submitApp(event)">
+      <div id="form-fields">
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
+          <div class="form-group">
+            <label>First Name *</label>
+            <input name="first_name" required>
+          </div>
+          <div class="form-group">
+            <label>Last Name *</label>
+            <input name="last_name" required>
+          </div>
+        </div>
+        <div class="form-group">
+          <label>Email Address *</label>
+          <input name="email" type="email" required>
+        </div>
+        <div class="form-group">
+          <label>Phone Number *</label>
+          <input name="phone" type="tel" placeholder="+1 (555) 000-0000" required>
+        </div>
+        <div class="form-group">
+          <label>LinkedIn Profile (optional)</label>
+          <input name="linkedin" placeholder="linkedin.com/in/yourname">
+        </div>
+        <div class="form-group">
+          <label>Why are you interested in this role?</label>
+          <textarea name="cover_note" placeholder="A few sentences is great…"></textarea>
+        </div>
+        <div class="form-group">
+          <label>Resume / CV</label>
+          <div class="upload-area" onclick="document.getElementById('resume-file').click()">
+            <div style="font-size:32px">📄</div>
+            <strong style="font-size:14px">Click to upload your resume</strong>
+            <p>PDF, Word, or plain text · Max 10MB</p>
+            <p id="file-name" style="color:#2563eb;font-weight:600;margin-top:6px"></p>
+          </div>
+          <input type="file" id="resume-file" name="resume" accept=".pdf,.doc,.docx,.txt"
+                 style="display:none" onchange="showFileName(this)">
+        </div>
+        <input type="hidden" name="job_id" value="{{ job.job_id }}">
+        <input type="hidden" name="job_title" value="{{ job.title }}">
+        <button type="submit" class="btn" id="submit-btn">Submit Application →</button>
+        <p class="disclaimer">
+          By applying, you agree that {{ company_name }} may contact you about this and future opportunities.
+          Jenny is an AI — your application is reviewed by a human hiring manager.
+        </p>
+      </div>
+      <div class="success" id="success-screen">
+        <div style="font-size:60px">🎉</div>
+        <h2>Application received!</h2>
+        <p>Thanks <span id="applicant-name"></span>! Jenny will reach out within 24 hours.<br>
+        Check your phone — she'll text you to confirm receipt.</p>
+      </div>
+    </form>
+  </div>
+</div>
+<script>
+function showFileName(input) {
+  const name = input.files[0]?.name || '';
+  document.getElementById('file-name').textContent = name ? '✓ ' + name : '';
+}
+async function submitApp(e) {
+  e.preventDefault();
+  const btn = document.getElementById('submit-btn');
+  btn.textContent = 'Submitting…'; btn.disabled = true;
+  const fd = new FormData(e.target);
+  const r = await fetch('/apply/submit', {method:'POST', body:fd});
+  if (r.ok) {
+    const firstName = fd.get('first_name');
+    document.getElementById('form-fields').style.display = 'none';
+    document.getElementById('success-screen').style.display = 'block';
+    document.getElementById('applicant-name').textContent = firstName + '!';
+  } else {
+    btn.textContent = 'Submit Application →'; btn.disabled = false;
+    alert('Something went wrong. Please try again.');
+  }
+}
+</script>
+</body>
+</html>

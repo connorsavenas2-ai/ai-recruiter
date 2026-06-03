@@ -382,13 +382,265 @@ Return JSON:
         return jsonify({"suggestion": str(e)}), 500
 
 
-# Redirect root to ATS
+# ── BULK ACTIONS ─────────────────────────────────────────────────────────────
+
+@app.route("/ats/api/bulk", methods=["POST"])
+@login_required
+def api_bulk():
+    data       = request.json or {}
+    record_ids = data.get("record_ids", [])
+    action     = data.get("action", "")
+    value      = data.get("value", "")
+    done, errors = 0, 0
+    for rid in record_ids:
+        try:
+            if action == "status":
+                ats.update_candidate(rid, {"Status": value})
+            elif action == "reject_with_email":
+                cand_resp = req.get(
+                    f"https://api.airtable.com/v0/{AIRTABLE_BASE_ID}/{AIRTABLE_CANDIDATES}/{rid}",
+                    headers=AT_HEADERS)
+                f = cand_resp.json().get("fields", {})
+                ats.update_candidate(rid, {"Status": "Rejected"})
+                if f.get("Email"):
+                    email_out.send_rejection_email(f.get("Name",""), f["Email"], f.get("Job_Title",""))
+            done += 1
+        except:
+            errors += 1
+    return jsonify({"ok": True, "updated": done, "errors": errors})
+
+
+# ── SCORECARD ─────────────────────────────────────────────────────────────────
+
+@app.route("/ats/api/scorecard", methods=["POST"])
+@login_required
+def api_scorecard():
+    data      = request.json or {}
+    record_id = data.get("record_id", "")
+    ratings   = data.get("ratings", {})
+    notes     = data.get("notes", "")
+    decision  = data.get("decision", "")
+    interviewer = current_user().get("display_name", "")
+    scorecard_text = f"INTERVIEW SCORECARD — {interviewer}\n\n"
+    for competency, rating in ratings.items():
+        scorecard_text += f"{competency}: {rating}/5\n"
+    avg = sum(ratings.values()) / len(ratings) if ratings else 0
+    scorecard_text += f"\nOverall: {avg:.1f}/5\nDecision: {decision}\n\nNotes:\n{notes}"
+    try:
+        existing_notes = req.get(
+            f"https://api.airtable.com/v0/{AIRTABLE_BASE_ID}/{AIRTABLE_CANDIDATES}/{record_id}",
+            headers=AT_HEADERS).json().get("fields", {}).get("Notes", "")
+        new_notes = (existing_notes + "\n\n" if existing_notes else "") + scorecard_text
+        ats.update_candidate(record_id, {
+            "Notes": new_notes,
+            "Status": "Hired" if decision == "Hire" else ("Rejected" if decision == "No Hire" else None)
+        })
+        return jsonify({"ok": True})
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 500
+
+
+# ── OFFER TRACKING ────────────────────────────────────────────────────────────
+
+@app.route("/ats/api/send-offer", methods=["POST"])
+@login_required
+def api_send_offer():
+    data = request.json or {}
+    try:
+        from offer_letter import email_offer_letter
+        cand = ats.get_candidate_by_email(data.get("email", ""))
+        if not cand:
+            return jsonify({"ok": False, "error": "Candidate not found"}), 404
+        f = cand["fields"]
+        email_offer_letter(f.get("Name",""), data["email"], f.get("Job_Title",""),
+                          data.get("rate","TBD"), data.get("start_date","TBD"))
+        ats.update_candidate(cand["id"], {"Status": "Final_Round",
+                                           "Notes": f"Offer sent: {data.get('rate')} starting {data.get('start_date')}"})
+        from jenny.notifications import notify_offer_sent
+        notify_offer_sent(f.get("Name",""), f.get("Job_Title",""), data.get("rate","TBD"))
+        return jsonify({"ok": True})
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 500
+
+
+# ── PUBLIC APPLY FORM ─────────────────────────────────────────────────────────
+
+@app.route("/apply/<job_id>")
+def apply_page(job_id):
+    jobs    = ats.get_active_jobs()
+    job_obj = next((j for j in jobs if j["fields"].get("Job_ID") == job_id), None)
+    if not job_obj:
+        return "Job not found or no longer accepting applications.", 404
+    job = _map_job(job_obj)
+    return render_template("apply.html", job=job, company_name=COMPANY_NAME,
+                           jenny_name="Jenny")
+
+
+@app.route("/apply/submit", methods=["POST"])
+def apply_submit():
+    import threading
+    first = request.form.get("first_name", "").strip()
+    last  = request.form.get("last_name", "").strip()
+    name  = f"{first} {last}".strip()
+    email_addr = request.form.get("email", "").strip()
+    phone      = request.form.get("phone", "").strip()
+    job_title  = request.form.get("job_title", "")
+    job_id     = request.form.get("job_id", "")
+    cover      = request.form.get("cover_note", "")
+    linkedin   = request.form.get("linkedin", "")
+    resume_file = request.files.get("resume")
+
+    resume_text = ""
+    if resume_file and resume_file.filename:
+        import tempfile, os as _os
+        suffix = _os.path.splitext(resume_file.filename)[1]
+        with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tmp:
+            resume_file.save(tmp.name)
+            try:
+                from resume_parser import parse_resume
+                resume_text = parse_resume(tmp.name)
+            except:
+                resume_text = cover
+            _os.unlink(tmp.name)
+
+    def process():
+        try:
+            notes = f"Cover note: {cover}\nLinkedIn: {linkedin}" if cover or linkedin else ""
+            rec = ats.create_candidate(name, email_addr, phone, job_title, job_id,
+                                       source="Direct Apply", notes=notes)
+            record_id = rec["id"]
+
+            from jenny.notifications import notify_new_application
+            notify_new_application(name, job_title, "Direct Apply")
+
+            if resume_text:
+                from candidate_scorer import score_candidate_from_resume
+                from jenny.notifications import notify_qualified_candidate
+                jobs_list = ats.get_active_jobs()
+                job_obj   = next((j for j in jobs_list if j["fields"].get("Job_ID") == job_id), {})
+                job_desc  = job_obj.get("fields", {}).get("Description", "")
+                job_req   = job_obj.get("fields", {}).get("Requirements", "")
+                score_data = score_candidate_from_resume(resume_text, name, job_title, job_desc, job_req)
+                score = score_data.get("score", 0)
+                ats.update_candidate_after_call(
+                    record_id, "resume-screen", score,
+                    score_data.get("summary",""), "\n".join(score_data.get("strengths",[])),
+                    "\n".join(score_data.get("concerns",[])),
+                    score_data.get("comp_expectation",""), score_data.get("availability",""),
+                    score_data.get("recommend",""), resume_text
+                )
+                if score >= 7:
+                    email_out.send_qualified_email(name, email_addr, job_title, score_data.get("summary",""))
+                    notify_qualified_candidate(name, job_title, score, score_data.get("comp_expectation",""))
+                elif score <= 4:
+                    email_out.send_rejection_email(name, email_addr, job_title)
+            else:
+                email_out.send_application_received_email(name, email_addr, job_title)
+        except Exception as ex:
+            print(f"[APPLY] Error processing {name}: {ex}")
+
+    threading.Thread(target=process, daemon=True).start()
+    return jsonify({"ok": True})
+
+
+# ── CANDIDATE PORTAL ──────────────────────────────────────────────────────────
+
+@app.route("/portal", methods=["GET", "POST"])
+def candidate_portal():
+    candidate = None
+    error     = None
+    hiring_manager = os.getenv("YOUR_NAME", "the hiring team")
+    if request.method == "POST":
+        email_addr = request.form.get("email", "").strip()
+        phone      = request.form.get("phone", "").strip().replace(" ","").replace("-","").replace("(","").replace(")","")
+        found      = ats.get_candidate_by_email(email_addr)
+        if found:
+            stored_phone = (found.get("fields", {}).get("Phone") or "").replace(" ","").replace("-","").replace("(","").replace(")","")
+            if phone and stored_phone and not stored_phone.endswith(phone[-4:]):
+                error = "Phone number doesn't match our records."
+            else:
+                candidate = _map_candidate(found)
+        else:
+            error = "No application found with that email address."
+    return render_template("candidate_portal.html", candidate=candidate, error=error,
+                           company_name=COMPANY_NAME, hiring_manager=hiring_manager)
+
+
+# ── JENNY ROUTES ──────────────────────────────────────────────────────────────
+
+@app.route("/jenny/async-interview/<record_id>")
+def jenny_async_interview(record_id):
+    resp = req.get(
+        f"https://api.airtable.com/v0/{AIRTABLE_BASE_ID}/{AIRTABLE_CANDIDATES}/{record_id}",
+        headers=AT_HEADERS)
+    if resp.status_code != 200:
+        return "Interview link not found.", 404
+    f = resp.json().get("fields", {})
+    from jenny.async_video import get_async_interview_page
+    html = get_async_interview_page(f.get("Name","Candidate"), f.get("Job_Title","Role"), record_id)
+    from flask import make_response
+    return make_response(html, 200, {"Content-Type": "text/html"})
+
+
+@app.route("/jenny/submit-video-interview", methods=["POST"])
+def jenny_submit_video():
+    import threading
+    record_id = request.form.get("record_id","")
+    job_title = request.form.get("job_title","")
+    questions = [request.form.get(f"question_{i}","") for i in range(10)
+                 if request.form.get(f"question_{i}")]
+
+    def process():
+        try:
+            transcripts = []
+            for i, q in enumerate(questions):
+                video = request.files.get(f"video_{i}")
+                if video:
+                    transcripts.append(f"[Video response to: {q}]")
+
+            if transcripts:
+                from jenny.async_video import evaluate_video_responses
+                score_data = evaluate_video_responses(questions, transcripts, job_title)
+                score = score_data.get("score", 0)
+                ats.update_candidate_after_call(
+                    record_id, "async-video", score,
+                    score_data.get("summary",""), "\n".join(score_data.get("strengths",[])),
+                    "\n".join(score_data.get("concerns",[])), "", "", score_data.get("recommend",""),
+                    "\n\n".join(f"Q: {q}\nA: {t}" for q, t in zip(questions, transcripts))
+                )
+        except Exception as ex:
+            print(f"[JENNY VIDEO] Error: {ex}")
+
+    threading.Thread(target=process, daemon=True).start()
+    return jsonify({"ok": True})
+
+
+# ── PWA MANIFEST ──────────────────────────────────────────────────────────────
+
+@app.route("/manifest.json")
+def pwa_manifest():
+    return jsonify({
+        "name": COMPANY_NAME + " Hiring",
+        "short_name": "Hiring",
+        "start_url": "/ats/",
+        "display": "standalone",
+        "background_color": "#0f1e3d",
+        "theme_color": "#0f1e3d",
+        "icons": [
+            {"src": "/ats/static/icon-192.png", "sizes": "192x192", "type": "image/png"},
+            {"src": "/ats/static/icon-512.png", "sizes": "512x512", "type": "image/png"}
+        ]
+    })
+
+
+# ── REDIRECT ROOT ─────────────────────────────────────────────────────────────
+
 @app.route("/")
 def root():
     return redirect("/ats/")
 
 
 if __name__ == "__main__":
-    print("\n  Connor's ATS")
+    print(f"\n  {COMPANY_NAME} — Hiring Dashboard")
     print("  Open: http://localhost:5057\n")
     app.run(host="0.0.0.0", port=5057, debug=False)
