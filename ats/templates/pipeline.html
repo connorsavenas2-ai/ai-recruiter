@@ -1,0 +1,119 @@
+{% extends "base.html" %}
+{% block title %}Pipeline{% endblock %}
+{% block topbar_title %}Pipeline{% endblock %}
+{% block topbar_sub %}Drag candidates between stages{% endblock %}
+{% block topbar_actions %}
+  <select id="job-filter" class="btn btn-secondary btn-sm" onchange="load()" style="padding:6px 10px">
+    <option value="">All Jobs</option>
+  </select>
+{% endblock %}
+
+{% block content %}
+<div class="pipeline-board" id="board">
+  <div style="text-align:center;padding:60px;color:#94a3b8;width:100%">Loading pipeline…</div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const STAGES = [
+  {key:'Applied',     label:'Applied',     color:'#6b7a99'},
+  {key:'Called',      label:'Called',      color:'#3b82f6'},
+  {key:'Screened',    label:'Screened',    color:'#ca8a04'},
+  {key:'Qualified',   label:'Qualified',   color:'#16a34a'},
+  {key:'Final_Round', label:'Final Round', color:'#7c3aed'},
+  {key:'Hired',       label:'Hired',       color:'#065f46'},
+  {key:'Rejected',    label:'Rejected',    color:'#dc2626'},
+];
+
+let allCandidates = [];
+let dragCard = null;
+
+async function load() {
+  const jobFilter = document.getElementById('job-filter').value;
+  const r = await fetch('/ats/api/candidates?limit=500');
+  const d = await r.json();
+  allCandidates = d.candidates || [];
+
+  // Populate job filter if empty
+  const sel = document.getElementById('job-filter');
+  if (sel.options.length <= 1) {
+    const jobs = [...new Set(allCandidates.map(c=>c.job_title).filter(Boolean))];
+    jobs.forEach(j => sel.innerHTML += `<option>${j}</option>`);
+    if (jobFilter) sel.value = jobFilter;
+  }
+
+  const filtered = jobFilter
+    ? allCandidates.filter(c => c.job_title === jobFilter)
+    : allCandidates;
+
+  render(filtered);
+}
+
+function scoreEl(s) {
+  if (!s) return '';
+  const cls = s >= 7 ? '#16a34a' : s >= 5 ? '#ca8a04' : '#dc2626';
+  return `<span style="font-size:11px;font-weight:800;color:${cls};margin-left:auto">${s}/10</span>`;
+}
+
+function render(candidates) {
+  const board = document.getElementById('board');
+  board.innerHTML = '';
+
+  STAGES.forEach(stage => {
+    const stageCands = candidates.filter(c => c.status === stage.key);
+    const col = document.createElement('div');
+    col.className = 'pipeline-col';
+    col.dataset.stage = stage.key;
+    col.innerHTML = `
+      <div class="pipeline-col-header" style="background:${stage.color};color:white">
+        ${stage.label}
+        <span style="background:rgba(255,255,255,.2);border-radius:10px;padding:1px 8px;font-size:11px">${stageCands.length}</span>
+      </div>
+      <div class="pipeline-col-body" data-stage="${stage.key}"
+           ondragover="event.preventDefault()"
+           ondrop="drop(event,'${stage.key}')">
+      </div>`;
+    board.appendChild(col);
+
+    const body = col.querySelector('.pipeline-col-body');
+    stageCands.forEach(c => {
+      const card = document.createElement('div');
+      card.className = 'pipeline-card';
+      card.draggable = true;
+      card.dataset.id = c.record_id;
+      card.innerHTML = `
+        <div class="pc-name" style="display:flex;align-items:center;gap:4px">
+          ${c.name} ${scoreEl(c.score)}
+        </div>
+        <div class="pc-meta">${c.job_title||''} · ${c.source||''}</div>
+        <div class="pc-tags">
+          ${c.calendly_booked ? '<span class="badge" style="background:#ede9fe;color:#7c3aed;font-size:10px">📅 Booked</span>' : ''}
+          ${c.comp ? `<span class="badge" style="background:#f1f5f9;color:#334155;font-size:10px">${c.comp}</span>` : ''}
+        </div>`;
+      card.addEventListener('click', () => location.href = `/ats/candidates/${c.record_id}`);
+      card.addEventListener('dragstart', e => {
+        dragCard = c.record_id;
+        e.dataTransfer.effectAllowed = 'move';
+        card.style.opacity = '.4';
+      });
+      card.addEventListener('dragend', () => card.style.opacity = '1');
+      body.appendChild(card);
+    });
+  });
+}
+
+async function drop(e, newStage) {
+  e.preventDefault();
+  if (!dragCard) return;
+  const r = await fetch(`/ats/api/candidates/${dragCard}`, {
+    method:'PATCH', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({Status: newStage})
+  });
+  if (r.ok) { toast(`Moved to ${newStage.replace('_',' ')}`, 'success'); load(); }
+  dragCard = null;
+}
+
+load();
+</script>
+{% endblock %}

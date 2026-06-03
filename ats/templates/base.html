@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{% block title %}ATS{% endblock %} — Connor Savenas</title>
+<link rel="stylesheet" href="/ats/static/style.css">
+</head>
+<body>
+<div class="layout">
+
+  <!-- SIDEBAR -->
+  <aside class="sidebar">
+    <div class="sidebar-brand">
+      <h1>Connor's ATS</h1>
+      <span>Hiring Pipeline</span>
+    </div>
+    <nav class="sidebar-nav">
+      <div class="nav-section">Main</div>
+      <a href="/ats/" class="nav-item {% if page=='dashboard' %}active{% endif %}">
+        <span class="icon">📊</span> Dashboard
+      </a>
+      <a href="/ats/jobs" class="nav-item {% if page=='jobs' %}active{% endif %}">
+        <span class="icon">💼</span> Jobs
+        <span class="nav-badge" id="nb-jobs">—</span>
+      </a>
+      <a href="/ats/candidates" class="nav-item {% if page=='candidates' %}active{% endif %}">
+        <span class="icon">👥</span> Candidates
+        <span class="nav-badge" id="nb-cands">—</span>
+      </a>
+      <a href="/ats/pipeline" class="nav-item {% if page=='pipeline' %}active{% endif %}">
+        <span class="icon">🔀</span> Pipeline
+      </a>
+      <div class="nav-section">Tools</div>
+      <a href="/ats/analytics" class="nav-item {% if page=='analytics' %}active{% endif %}">
+        <span class="icon">📈</span> Analytics
+      </a>
+      <a href="/ats/outreach" class="nav-item {% if page=='outreach' %}active{% endif %}">
+        <span class="icon">✉️</span> Outreach
+      </a>
+      <a href="/ats/interviews" class="nav-item {% if page=='interviews' %}active{% endif %}">
+        <span class="icon">📅</span> Interviews
+      </a>
+      <div class="nav-section">System</div>
+      <a href="http://localhost:5056" target="_blank" class="nav-item">
+        <span class="icon">🤖</span> AI Recruiter
+      </a>
+    </nav>
+    <div class="sidebar-footer">
+      <span id="sb-time"></span>
+    </div>
+  </aside>
+
+  <!-- MAIN -->
+  <div class="main">
+    <div class="topbar">
+      <div>
+        <div class="topbar-title">{% block topbar_title %}{% endblock %}</div>
+        {% if self.topbar_sub() %}<div class="topbar-sub">{% block topbar_sub %}{% endblock %}</div>{% endif %}
+      </div>
+      <div class="topbar-right">{% block topbar_actions %}{% endblock %}</div>
+    </div>
+    <div class="content">{% block content %}{% endblock %}</div>
+  </div>
+
+</div>
+
+<div id="toast"></div>
+
+<script>
+// Sidebar clock
+function updateClock() {
+  document.getElementById('sb-time').textContent =
+    new Date().toLocaleTimeString('en-US', {hour:'2-digit',minute:'2-digit'});
+}
+updateClock(); setInterval(updateClock, 30000);
+
+// Load nav badges
+async function loadNavBadges() {
+  try {
+    const r = await fetch('/ats/api/counts');
+    const d = await r.json();
+    document.getElementById('nb-jobs').textContent  = d.active_jobs  || 0;
+    document.getElementById('nb-cands').textContent = d.new_today || 0;
+  } catch(e) {}
+}
+loadNavBadges();
+
+// Toast helper
+function toast(msg, type='') {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.className = 'show ' + type;
+  setTimeout(() => el.className = '', 3000);
+}
+
+// Modal helpers
+function openModal(id)  { document.getElementById(id).classList.add('open'); }
+function closeModal(id) { document.getElementById(id).classList.remove('open'); }
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape')
+    document.querySelectorAll('.modal-overlay.open')
+      .forEach(m => m.classList.remove('open'));
+});
+</script>
+{% block scripts %}{% endblock %}
+</body>
+</html>

@@ -1,0 +1,340 @@
+{% extends "base.html" %}
+{% block title %}{{ candidate.name }}{% endblock %}
+{% block topbar_title %}{{ candidate.name }}{% endblock %}
+{% block topbar_sub %}<a href="/ats/candidates" style="color:#64748b">← Candidates</a>{% endblock %}
+{% block topbar_actions %}
+  <button class="btn btn-secondary btn-sm" onclick="openModal('edit-modal')">Edit</button>
+  {% if candidate.score >= 7 and not candidate.calendly_booked %}
+  <button class="btn btn-success btn-sm" onclick="sendCalendly()">Send Calendly Link</button>
+  {% endif %}
+  {% if candidate.status != 'Rejected' %}
+  <button class="btn btn-danger btn-sm" onclick="rejectCandidate()">Reject</button>
+  {% endif %}
+  <button class="btn btn-primary btn-sm" onclick="generatePrep()">📋 Prep Packet</button>
+{% endblock %}
+
+{% block content %}
+{% set score = candidate.score or 0 %}
+{% set score_cls = 'high' if score >= 7 else ('mid' if score >= 5 else ('low' if score > 0 else 'none')) %}
+
+<!-- Profile Header -->
+<div class="profile-header">
+  <div class="avatar">{{ candidate.name[0] | upper }}</div>
+  <div class="profile-info">
+    <h2>{{ candidate.name }}</h2>
+    <div class="meta">
+      {% if candidate.email %}<span>✉ {{ candidate.email }}</span>{% endif %}
+      {% if candidate.phone %}<span>📱 {{ candidate.phone }}</span>{% endif %}
+      {% if candidate.job_title %}<span>💼 {{ candidate.job_title }}</span>{% endif %}
+      {% if candidate.source %}<span>🔗 {{ candidate.source }}</span>{% endif %}
+      {% if candidate.applied_date %}<span>📅 Applied {{ candidate.applied_date }}</span>{% endif %}
+    </div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+      {% set st_map = {'Applied':'applied','Called':'called','Screened':'screened','Qualified':'qualified','Final_Round':'final','Hired':'hired','Rejected':'rejected'} %}
+      <span class="badge badge-{{ st_map[candidate.status] or 'applied' }}" style="font-size:13px;padding:5px 12px">
+        {{ candidate.status | replace('_', ' ') }}
+      </span>
+      {% if candidate.recommend %}
+      <span class="badge" style="background:#f0fdf4;color:#15803d;font-size:13px;padding:5px 12px">
+        {{ candidate.recommend }}
+      </span>
+      {% endif %}
+      {% if candidate.calendly_booked %}
+      <span class="badge" style="background:#ede9fe;color:#7c3aed;font-size:13px;padding:5px 12px">
+        📅 Interview Booked
+      </span>
+      {% endif %}
+    </div>
+  </div>
+  <div class="score-circle {{ score_cls }}">
+    <div class="sc-num">{{ score if score else '—' }}</div>
+    <div class="sc-lbl">Score</div>
+  </div>
+</div>
+
+<!-- Status Changer -->
+<div class="card" style="margin-bottom:20px">
+  <div class="card-body" style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+    <span style="font-weight:700;font-size:13px;color:#64748b">Move to:</span>
+    {% for st in ['Applied','Called','Screened','Qualified','Final_Round','Hired','Rejected'] %}
+    <button class="btn btn-secondary btn-sm {% if candidate.status == st %}btn-primary{% endif %}"
+            onclick="changeStatus('{{ st }}')">{{ st | replace('_',' ') }}</button>
+    {% endfor %}
+  </div>
+</div>
+
+<div class="profile-grid">
+  <!-- Left column -->
+  <div style="display:flex;flex-direction:column;gap:16px">
+
+    <!-- AI Score Summary -->
+    {% if candidate.score_summary %}
+    <div class="card">
+      <div class="card-header"><h3>🤖 AI Assessment</h3></div>
+      <div class="card-body">
+        <p style="font-size:13px;line-height:1.7;margin-bottom:16px">{{ candidate.score_summary }}</p>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
+          {% if candidate.strengths %}
+          <div>
+            <div class="detail-section">
+              <h4>Strengths</h4>
+              <ul class="strengths-list">
+                {% for s in candidate.strengths.split('\n') %}{% if s.strip() %}
+                <li>{{ s.strip() }}</li>
+                {% endif %}{% endfor %}
+              </ul>
+            </div>
+          </div>
+          {% endif %}
+          {% if candidate.concerns %}
+          <div>
+            <div class="detail-section">
+              <h4>Concerns</h4>
+              <ul class="concerns-list">
+                {% for c in candidate.concerns.split('\n') %}{% if c.strip() %}
+                <li>{{ c.strip() }}</li>
+                {% endif %}{% endfor %}
+              </ul>
+            </div>
+          </div>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+    {% endif %}
+
+    <!-- Transcript -->
+    {% if candidate.transcript %}
+    <div class="card">
+      <div class="card-header">
+        <h3>📝 Resume / Transcript</h3>
+        <button class="btn btn-ghost btn-sm" onclick="toggleTranscript()">Show/Hide</button>
+      </div>
+      <div id="transcript-body" class="card-body" style="display:none">
+        <pre style="font-size:12px;line-height:1.7;white-space:pre-wrap;color:#334155">{{ candidate.transcript[:3000] }}</pre>
+      </div>
+    </div>
+    {% endif %}
+
+    <!-- Notes -->
+    <div class="card">
+      <div class="card-header"><h3>📌 Notes</h3>
+        <button class="btn btn-ghost btn-sm" onclick="openModal('note-modal')">+ Add Note</button>
+      </div>
+      <div class="card-body">
+        <div id="notes-content" style="font-size:13px;line-height:1.7;color:#334155;white-space:pre-wrap">
+          {{ candidate.notes or 'No notes yet. Click "+ Add Note" to add one.' }}
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- Right column -->
+  <div style="display:flex;flex-direction:column;gap:16px">
+
+    <!-- Key Details -->
+    <div class="card">
+      <div class="card-header"><h3>Details</h3></div>
+      <div class="card-body" style="padding:12px 16px">
+        <div class="detail-row"><span class="dl">Comp Expectation</span><span class="dv">{{ candidate.comp_expectation or '—' }}</span></div>
+        <div class="detail-row"><span class="dl">Availability</span><span class="dv">{{ candidate.availability or '—' }}</span></div>
+        <div class="detail-row"><span class="dl">Job Applied For</span><span class="dv">{{ candidate.job_title or '—' }}</span></div>
+        <div class="detail-row"><span class="dl">Source</span><span class="dv">{{ candidate.source or '—' }}</span></div>
+        <div class="detail-row"><span class="dl">Applied</span><span class="dv">{{ candidate.applied_date or '—' }}</span></div>
+        {% if candidate.called_date %}
+        <div class="detail-row"><span class="dl">Called</span><span class="dv">{{ candidate.called_date }}</span></div>
+        {% endif %}
+        {% if candidate.final_interview_date %}
+        <div class="detail-row"><span class="dl">Final Interview</span><span class="dv">{{ candidate.final_interview_date }}</span></div>
+        {% endif %}
+        {% if candidate.call_id %}
+        <div class="detail-row"><span class="dl">Call ID</span><span class="dv" style="font-size:11px;color:#94a3b8">{{ candidate.call_id }}</span></div>
+        {% endif %}
+        {% if candidate.call_recording_url %}
+        <div class="detail-row"><span class="dl">Recording</span><span class="dv"><a href="{{ candidate.call_recording_url }}" target="_blank">Listen →</a></span></div>
+        {% endif %}
+      </div>
+    </div>
+
+    <!-- Quick Actions -->
+    <div class="card">
+      <div class="card-header"><h3>Quick Actions</h3></div>
+      <div class="card-body" style="display:flex;flex-direction:column;gap:8px">
+        {% if candidate.email %}
+        <a href="mailto:{{ candidate.email }}" class="btn btn-secondary">✉ Email Candidate</a>
+        {% endif %}
+        {% if candidate.score >= 7 %}
+        <button class="btn btn-success" onclick="sendCalendly()">📅 Send Calendly Link</button>
+        {% endif %}
+        <button class="btn btn-secondary" onclick="generatePrep()">📋 Generate Prep Packet</button>
+        {% if candidate.email %}
+        <button class="btn btn-secondary" onclick="sendRejection()">❌ Send Rejection Email</button>
+        {% endif %}
+        {% if candidate.call_recording_url %}
+        <a href="{{ candidate.call_recording_url }}" target="_blank" class="btn btn-secondary">🎙 Listen to Call</a>
+        {% endif %}
+      </div>
+    </div>
+
+    <!-- Outreach Sequence -->
+    <div class="card">
+      <div class="card-header"><h3>Outreach Sequence</h3></div>
+      <div class="card-body">
+        <button class="btn btn-secondary" style="width:100%"
+                onclick="enrollSequence()">Enroll in 3-Email Sequence</button>
+        <p style="font-size:11px;color:#94a3b8;margin-top:8px;text-align:center">
+          Day 1 → Day 3 → Day 7, auto-stops on reply
+        </p>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<!-- Edit Modal -->
+<div class="modal-overlay" id="edit-modal" onclick="if(event.target===this)closeModal('edit-modal')">
+  <div class="modal-box">
+    <button class="modal-close" onclick="closeModal('edit-modal')">✕</button>
+    <h3>Edit Candidate</h3>
+    <form onsubmit="saveEdit(event)">
+      <div class="form-grid">
+        <div class="form-group"><label>Name</label>
+          <input name="name" value="{{ candidate.name }}"></div>
+        <div class="form-group"><label>Email</label>
+          <input name="email" value="{{ candidate.email }}"></div>
+        <div class="form-group"><label>Phone</label>
+          <input name="phone" value="{{ candidate.phone }}"></div>
+        <div class="form-group"><label>Job Title</label>
+          <input name="job_title" value="{{ candidate.job_title }}"></div>
+        <div class="form-group"><label>Comp Expectation</label>
+          <input name="comp_expectation" value="{{ candidate.comp_expectation }}"></div>
+        <div class="form-group"><label>Availability</label>
+          <input name="availability" value="{{ candidate.availability }}"></div>
+      </div>
+      <div class="form-actions">
+        <button type="button" class="btn btn-secondary" onclick="closeModal('edit-modal')">Cancel</button>
+        <button type="submit" class="btn btn-primary">Save Changes</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- Note Modal -->
+<div class="modal-overlay" id="note-modal" onclick="if(event.target===this)closeModal('note-modal')">
+  <div class="modal-box">
+    <button class="modal-close" onclick="closeModal('note-modal')">✕</button>
+    <h3>Add Note</h3>
+    <div class="form-group">
+      <textarea id="new-note" style="min-height:120px" placeholder="Enter your note..."></textarea>
+    </div>
+    <div class="form-actions">
+      <button class="btn btn-secondary" onclick="closeModal('note-modal')">Cancel</button>
+      <button class="btn btn-primary" onclick="saveNote()">Save Note</button>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const RECORD_ID = '{{ candidate.record_id }}';
+const EMAIL     = '{{ candidate.email }}';
+const NAME      = '{{ candidate.name }}';
+const JOB       = '{{ candidate.job_title }}';
+
+function toggleTranscript() {
+  const el = document.getElementById('transcript-body');
+  el.style.display = el.style.display === 'none' ? 'block' : 'none';
+}
+
+async function changeStatus(status) {
+  const r = await fetch(`/ats/api/candidates/${RECORD_ID}`, {
+    method: 'PATCH', headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({Status: status})
+  });
+  if (r.ok) { toast('Status updated!', 'success'); setTimeout(()=>location.reload(), 800); }
+  else toast('Error updating status', 'error');
+}
+
+async function sendCalendly() {
+  const r = await fetch('/ats/api/send-calendly', {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({record_id: RECORD_ID, email: EMAIL, name: NAME, job_title: JOB})
+  });
+  if (r.ok) toast(`Calendly link sent to ${NAME}`, 'success');
+  else toast('Error — check Gmail app password in .env', 'error');
+}
+
+async function sendRejection() {
+  if (!confirm(`Send rejection email to ${NAME}?`)) return;
+  const r = await fetch('/ats/api/reject', {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({record_id: RECORD_ID, email: EMAIL, name: NAME, job_title: JOB})
+  });
+  if (r.ok) { toast('Rejection sent', 'success'); setTimeout(()=>location.reload(), 1000); }
+  else toast('Error sending rejection', 'error');
+}
+
+async function rejectCandidate() {
+  if (!confirm(`Reject ${NAME}?`)) return;
+  await fetch(`/ats/api/candidates/${RECORD_ID}`, {
+    method:'PATCH', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({Status:'Rejected'})
+  });
+  toast('Candidate rejected', 'success');
+  setTimeout(()=>location.href='/ats/candidates', 1000);
+}
+
+async function generatePrep() {
+  toast('Generating prep packet…');
+  const r = await fetch(`/ats/api/prep/${RECORD_ID}`);
+  const d = await r.json();
+  const win = window.open('', '_blank');
+  win.document.write(`<pre style="font-family:monospace;padding:32px;max-width:800px;white-space:pre-wrap">${d.prep}</pre>`);
+}
+
+async function saveNote() {
+  const note = document.getElementById('new-note').value.trim();
+  if (!note) return;
+  const existing = document.getElementById('notes-content').textContent.trim();
+  const combined = existing === 'No notes yet. Click "+ Add Note" to add one.'
+    ? note : existing + '\n\n' + note;
+  const r = await fetch(`/ats/api/candidates/${RECORD_ID}`, {
+    method:'PATCH', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({Notes: combined})
+  });
+  if (r.ok) {
+    document.getElementById('notes-content').textContent = combined;
+    closeModal('note-modal');
+    document.getElementById('new-note').value = '';
+    toast('Note saved', 'success');
+  }
+}
+
+async function saveEdit(e) {
+  e.preventDefault();
+  const fd = new FormData(e.target);
+  const data = Object.fromEntries(fd);
+  const mapped = {
+    Name: data.name, Email: data.email, Phone: data.phone,
+    Job_Title: data.job_title, Comp_Expectation: data.comp_expectation,
+    Availability: data.availability
+  };
+  const r = await fetch(`/ats/api/candidates/${RECORD_ID}`, {
+    method:'PATCH', headers:{'Content-Type':'application/json'}, body: JSON.stringify(mapped)
+  });
+  if (r.ok) { toast('Saved!', 'success'); setTimeout(()=>location.reload(), 800); }
+  else toast('Error saving', 'error');
+}
+
+async function enrollSequence() {
+  const r = await fetch('/ats/api/enroll-sequence', {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({email: EMAIL, name: NAME, job_title: JOB, record_id: RECORD_ID})
+  });
+  if (r.ok) toast(`${NAME} enrolled in outreach sequence`, 'success');
+  else toast('Error enrolling', 'error');
+}
+</script>
+{% endblock %}

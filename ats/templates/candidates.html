@@ -1,0 +1,198 @@
+{% extends "base.html" %}
+{% block title %}Candidates{% endblock %}
+{% block topbar_title %}Candidates{% endblock %}
+{% block topbar_sub %}All applicants across every role{% endblock %}
+{% block topbar_actions %}
+  <button class="btn btn-secondary btn-sm" onclick="openModal('add-modal')">+ Add Manually</button>
+{% endblock %}
+
+{% block content %}
+<div class="filter-bar">
+  <input type="text" id="search" placeholder="Search by name, email, job…" oninput="filterCandidates()">
+  <select id="f-status" onchange="filterCandidates()">
+    <option value="">All Statuses</option>
+    <option>Applied</option><option>Called</option><option>Screened</option>
+    <option>Qualified</option><option>Final_Round</option><option>Hired</option><option>Rejected</option>
+  </select>
+  <select id="f-source" onchange="filterCandidates()">
+    <option value="">All Sources</option>
+    <option>Indeed</option><option>LinkedIn</option><option>Handshake</option>
+    <option>Referral</option><option>Outreach</option><option>Manual</option>
+  </select>
+  <select id="f-score" onchange="filterCandidates()">
+    <option value="">Any Score</option>
+    <option value="7">Score 7+ (Qualified)</option>
+    <option value="5">Score 5-6 (Maybe)</option>
+    <option value="0">Score 1-4 (Not Fit)</option>
+  </select>
+  <select id="f-job" onchange="filterCandidates()">
+    <option value="">All Jobs</option>
+  </select>
+</div>
+
+<div class="card">
+  <div class="card-header">
+    <h3 id="cand-count">All Candidates</h3>
+    <div style="display:flex;gap:8px">
+      <button class="btn btn-ghost btn-sm" onclick="exportCSV()">↓ Export CSV</button>
+    </div>
+  </div>
+  <div class="table-wrap">
+    <table>
+      <thead><tr>
+        <th>Name</th><th>Job</th><th>Score</th><th>Status</th>
+        <th>Comp</th><th>Source</th><th>Applied</th><th>Actions</th>
+      </tr></thead>
+      <tbody id="cand-tbody">
+        <tr><td colspan="8" style="text-align:center;color:#94a3b8;padding:40px">Loading...</td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- Add Candidate Modal -->
+<div class="modal-overlay" id="add-modal" onclick="if(event.target===this)closeModal('add-modal')">
+  <div class="modal-box">
+    <button class="modal-close" onclick="closeModal('add-modal')">✕</button>
+    <h3>Add Candidate Manually</h3>
+    <form id="add-form" onsubmit="addCandidate(event)">
+      <div class="form-grid">
+        <div class="form-group"><label>Full Name *</label><input name="name" required></div>
+        <div class="form-group"><label>Email *</label><input name="email" type="email" required></div>
+        <div class="form-group"><label>Phone</label><input name="phone"></div>
+        <div class="form-group"><label>Job Title</label><input name="job_title"></div>
+        <div class="form-group"><label>Source</label>
+          <select name="source">
+            <option>Manual</option><option>Indeed</option><option>LinkedIn</option>
+            <option>Handshake</option><option>Referral</option>
+          </select>
+        </div>
+        <div class="form-group"><label>Comp Expectation</label><input name="comp" placeholder="e.g. $35/hr"></div>
+        <div class="form-group full"><label>Notes</label><textarea name="notes"></textarea></div>
+      </div>
+      <div class="form-actions">
+        <button type="button" class="btn btn-secondary" onclick="closeModal('add-modal')">Cancel</button>
+        <button type="submit" class="btn btn-primary">Add Candidate</button>
+      </div>
+    </form>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+let allCandidates = [];
+
+function scorePill(s) {
+  if (!s) return '<span class="score-pill score-none">—</span>';
+  const cls = s >= 7 ? 'high' : s >= 5 ? 'mid' : 'low';
+  return `<span class="score-pill score-${cls}">${s}</span>`;
+}
+function statusBadge(st) {
+  const map = {Applied:'applied',Called:'called',Screened:'screened',Qualified:'qualified',
+    Final_Round:'final',Hired:'hired',Rejected:'rejected'};
+  const lbl = {Applied:'Applied',Called:'Called',Screened:'Screened',Qualified:'Qualified',
+    Final_Round:'Final Round',Hired:'Hired',Rejected:'Rejected'};
+  return `<span class="badge badge-${map[st]||'applied'}">${lbl[st]||st}</span>`;
+}
+
+async function load() {
+  const r = await fetch('/ats/api/candidates?limit=200');
+  const d = await r.json();
+  allCandidates = d.candidates || [];
+
+  // Populate job filter
+  const jobs = [...new Set(allCandidates.map(c=>c.job_title).filter(Boolean))];
+  const sel = document.getElementById('f-job');
+  jobs.forEach(j => sel.innerHTML += `<option>${j}</option>`);
+
+  render(allCandidates);
+}
+
+function filterCandidates() {
+  const q    = document.getElementById('search').value.toLowerCase();
+  const fs   = document.getElementById('f-status').value;
+  const fsc  = document.getElementById('f-source').value;
+  const fscr = document.getElementById('f-score').value;
+  const fj   = document.getElementById('f-job').value;
+
+  let filtered = allCandidates.filter(c => {
+    if (q && !`${c.name}${c.email}${c.job_title}`.toLowerCase().includes(q)) return false;
+    if (fs  && c.status !== fs) return false;
+    if (fsc && c.source !== fsc) return false;
+    if (fj  && c.job_title !== fj) return false;
+    if (fscr) {
+      const sc = c.score || 0;
+      if (fscr === '7' && sc < 7) return false;
+      if (fscr === '5' && (sc < 5 || sc > 6)) return false;
+      if (fscr === '0' && (sc === 0 || sc > 4)) return false;
+    }
+    return true;
+  });
+  render(filtered);
+}
+
+function render(cands) {
+  document.getElementById('cand-count').textContent =
+    `${cands.length} Candidate${cands.length !== 1 ? 's' : ''}`;
+  const tbody = document.getElementById('cand-tbody');
+  if (!cands.length) {
+    tbody.innerHTML = '<tr><td colspan="8"><div class="empty-state"><div class="es-icon">🔍</div><h3>No candidates match</h3><p>Try adjusting your filters</p></div></td></tr>';
+    return;
+  }
+  tbody.innerHTML = cands.map(c => `
+    <tr>
+      <td>
+        <a href="/ats/candidates/${c.record_id}" class="table-link">${c.name}</a>
+        ${c.calendly_booked ? '<br><span style="font-size:10px;color:#16a34a;font-weight:700">📅 Interview Booked</span>' : ''}
+      </td>
+      <td style="color:#64748b;font-size:12px">${c.job_title||'—'}</td>
+      <td>${scorePill(c.score)}</td>
+      <td>${statusBadge(c.status)}</td>
+      <td style="font-size:12px;color:#64748b">${c.comp||'—'}</td>
+      <td style="font-size:12px;color:#64748b">${c.source||'—'}</td>
+      <td style="font-size:12px;color:#94a3b8">${c.applied_date||'—'}</td>
+      <td>
+        <div style="display:flex;gap:4px">
+          <a href="/ats/candidates/${c.record_id}" class="btn btn-ghost btn-sm">View</a>
+          ${c.score >= 7 && !c.calendly_booked
+            ? `<button class="btn btn-sm btn-success" onclick="sendCalendly('${c.record_id}','${c.email}','${c.name}','${c.job_title}')">Send Link</button>`
+            : ''}
+        </div>
+      </td>
+    </tr>`).join('');
+}
+
+async function addCandidate(e) {
+  e.preventDefault();
+  const fd = new FormData(e.target);
+  const data = Object.fromEntries(fd);
+  const r = await fetch('/ats/api/candidates', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)});
+  if (r.ok) {
+    toast('Candidate added!', 'success');
+    closeModal('add-modal');
+    e.target.reset();
+    load();
+  } else toast('Error adding candidate', 'error');
+}
+
+async function sendCalendly(id, email, name, job) {
+  const r = await fetch('/ats/api/send-calendly', {method:'POST',headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({record_id:id,email,name,job_title:job})});
+  if (r.ok) toast(`Calendly link sent to ${name}`, 'success');
+  else toast('Error sending link', 'error');
+}
+
+function exportCSV() {
+  const rows = [['Name','Email','Job','Score','Status','Comp','Source','Applied']];
+  allCandidates.forEach(c => rows.push([c.name,c.email,c.job_title,c.score,c.status,c.comp,c.source,c.applied_date]));
+  const csv  = rows.map(r => r.map(v => `"${v||''}"`).join(',')).join('\n');
+  const link = document.createElement('a');
+  link.href  = 'data:text/csv;charset=utf-8,' + encodeURIComponent(csv);
+  link.download = `candidates_${new Date().toISOString().slice(0,10)}.csv`;
+  link.click();
+}
+
+load();
+</script>
+{% endblock %}

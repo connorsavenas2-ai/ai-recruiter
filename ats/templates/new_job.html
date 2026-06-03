@@ -1,0 +1,79 @@
+{% extends "base.html" %}
+{% block title %}New Job{% endblock %}
+{% block topbar_title %}New Job Posting{% endblock %}
+{% block topbar_sub %}<a href="/ats/jobs" style="color:#64748b">← Jobs</a>{% endblock %}
+
+{% block content %}
+<div class="card" style="max-width:720px">
+  <div class="card-header"><h3>Create Job Posting</h3></div>
+  <div class="card-body">
+    <form id="job-form" onsubmit="createJob(event)">
+      <div class="form-grid">
+        <div class="form-group"><label>Job Title *</label>
+          <input name="title" required placeholder="e.g. Finance Analyst"></div>
+        <div class="form-group"><label>Type *</label>
+          <select name="type"><option value="1099">1099 Contractor</option>
+            <option value="Internship">Internship</option>
+            <option value="Part_Time">Part-Time</option></select></div>
+        <div class="form-group"><label>Pay Range</label>
+          <input name="pay" placeholder="e.g. $25-40/hr or $3,000/mo"></div>
+        <div class="form-group"><label>Location</label>
+          <input name="location" value="Remote" placeholder="Remote / City, State"></div>
+        <div class="form-group full"><label>Job Description *</label>
+          <textarea name="description" required style="min-height:120px"
+            placeholder="Describe the role, responsibilities, and what success looks like…"></textarea></div>
+        <div class="form-group full"><label>Requirements</label>
+          <textarea name="requirements" style="min-height:80px"
+            placeholder="Skills, experience, tools required…"></textarea></div>
+      </div>
+      <div id="ai-suggestion" style="display:none;background:#f0f9ff;border:1px solid #bae6fd;
+           border-radius:8px;padding:14px;margin-top:16px;font-size:13px">
+        <strong>AI Suggestion:</strong> <span id="ai-text"></span>
+      </div>
+      <div class="form-actions">
+        <a href="/ats/jobs" class="btn btn-secondary">Cancel</a>
+        <button type="button" class="btn btn-secondary" onclick="getAISuggestion()">✨ Improve with AI</button>
+        <button type="submit" class="btn btn-primary">Create Job</button>
+      </div>
+    </form>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+async function createJob(e) {
+  e.preventDefault();
+  const fd = new FormData(e.target);
+  const data = Object.fromEntries(fd);
+  const btn = e.target.querySelector('[type=submit]');
+  btn.textContent = 'Creating…'; btn.disabled = true;
+
+  const r = await fetch('/ats/api/jobs', {method:'POST',
+    headers:{'Content-Type':'application/json'}, body: JSON.stringify(data)});
+  const d = await r.json();
+  if (r.ok) {
+    toast('Job created!', 'success');
+    setTimeout(() => location.href = `/ats/jobs/${d.record_id}`, 800);
+  } else { toast('Error creating job', 'error'); btn.textContent='Create Job'; btn.disabled=false; }
+}
+
+async function getAISuggestion() {
+  const title = document.querySelector('[name=title]').value;
+  const desc  = document.querySelector('[name=description]').value;
+  if (!title) { toast('Enter a job title first', 'error'); return; }
+
+  const r = await fetch('/ats/api/ai-improve-jd', {method:'POST',
+    headers:{'Content-Type':'application/json'}, body: JSON.stringify({title, description: desc})});
+  const d = await r.json();
+  if (r.ok) {
+    document.getElementById('ai-text').textContent = d.suggestion;
+    document.getElementById('ai-suggestion').style.display = 'block';
+    if (d.improved_description)
+      document.querySelector('[name=description]').value = d.improved_description;
+    if (d.requirements)
+      document.querySelector('[name=requirements]').value = d.requirements;
+  }
+}
+</script>
+{% endblock %}

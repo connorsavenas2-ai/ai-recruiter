@@ -1,0 +1,68 @@
+{% extends "base.html" %}
+{% block title %}Jobs{% endblock %}
+{% block topbar_title %}Jobs{% endblock %}
+{% block topbar_sub %}Manage your open positions{% endblock %}
+{% block topbar_actions %}
+  <a href="/ats/jobs/new" class="btn btn-primary btn-sm">+ New Job</a>
+{% endblock %}
+
+{% block content %}
+<div id="jobs-container">
+  <div style="text-align:center;padding:60px;color:#94a3b8">Loading jobs…</div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+async function load() {
+  const r = await fetch('/ats/api/jobs');
+  const d = await r.json();
+  const jobs = d.jobs || [];
+
+  if (!jobs.length) {
+    document.getElementById('jobs-container').innerHTML = `
+      <div class="empty-state">
+        <div class="es-icon">💼</div>
+        <h3>No jobs yet</h3>
+        <p>Create your first job posting to start receiving candidates.</p>
+        <a href="/ats/jobs/new" class="btn btn-primary" style="margin-top:16px">+ Create Job</a>
+      </div>`;
+    return;
+  }
+
+  const typeMap = {'1099':'badge-1099','Internship':'badge-internship','Part_Time':'badge-called'};
+  const stMap   = {'Active':'badge-active','Paused':'badge-paused','Filled':'badge-filled','Closed':'badge-rejected'};
+
+  document.getElementById('jobs-container').innerHTML = `
+    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:16px">
+      ${jobs.map(j => `
+        <div class="card" style="transition:box-shadow .15s" onmouseover="this.style.boxShadow='0 4px 20px rgba(0,0,0,.1)'" onmouseout="this.style.boxShadow=''">
+          <div class="card-body">
+            <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:12px">
+              <div>
+                <a href="/ats/jobs/${j.record_id}" style="font-size:16px;font-weight:800;color:#0f172a;text-decoration:none">${j.title}</a>
+                <div style="font-size:12px;color:#94a3b8;margin-top:3px">${j.job_id}</div>
+              </div>
+              <span class="badge ${stMap[j.status]||'badge-applied'}">${j.status}</span>
+            </div>
+            <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px">
+              <span class="badge ${typeMap[j.type]||'badge-1099'}">${j.type}</span>
+              ${j.pay ? `<span class="badge" style="background:#f1f5f9;color:#334155">${j.pay}</span>` : ''}
+            </div>
+            <p style="font-size:13px;color:#64748b;line-height:1.6;margin-bottom:14px">
+              ${(j.description||'').slice(0,100)}${j.description && j.description.length > 100 ? '…' : ''}
+            </p>
+            <div style="display:flex;justify-content:space-between;align-items:center">
+              <span style="font-size:12px;color:#94a3b8">📅 Posted ${j.posted_date||'—'}</span>
+              <div style="display:flex;gap:6px">
+                <a href="/ats/jobs/${j.record_id}" class="btn btn-secondary btn-sm">View</a>
+                <a href="/ats/candidates?job=${encodeURIComponent(j.title)}" class="btn btn-ghost btn-sm">Candidates →</a>
+              </div>
+            </div>
+          </div>
+        </div>`).join('')}
+    </div>`;
+}
+load();
+</script>
+{% endblock %}
