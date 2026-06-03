@@ -1,0 +1,40 @@
+# Environment — NEVER commit this (contains API keys)
+.env
+*.env
+.env.*
+!.env.template
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+venv/
+env/
+.venv/
+*.egg-info/
+dist/
+build/
+.pytest_cache/
+
+# Google OAuth token (contains your credentials)
+google_token.pickle
+credentials.json
+token.json
+
+# Generated files
+offer_letters/
+logs/
+sequences.db
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo

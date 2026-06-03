@@ -1,0 +1,301 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AI Recruiter Dashboard</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+       background: #f0f2f5; color: #111; }
+
+/* NAV */
+nav { background: #1a2744; color: white; padding: 0 28px;
+      display: flex; align-items: center; gap: 24px; height: 52px; }
+nav h1 { font-size: 17px; font-weight: 700; letter-spacing: .3px; }
+nav span { font-size: 12px; color: #8fa3cc; }
+.nav-right { margin-left: auto; display: flex; gap: 16px; }
+.nav-btn { background: #2F5496; color: white; border: none; padding: 6px 14px;
+           border-radius: 6px; font-size: 13px; cursor: pointer; text-decoration: none; }
+.nav-btn:hover { background: #3d69b8; }
+
+/* STATS */
+.stats { display: flex; gap: 16px; padding: 20px 28px 0; flex-wrap: wrap; }
+.stat-card { background: white; border-radius: 10px; padding: 18px 24px;
+             flex: 1; min-width: 120px; box-shadow: 0 1px 4px rgba(0,0,0,.08); }
+.stat-card .num { font-size: 32px; font-weight: 700; color: #1a2744; }
+.stat-card .lbl { font-size: 12px; color: #888; margin-top: 2px; text-transform: uppercase;
+                  letter-spacing: .5px; }
+
+/* PIPELINE */
+.pipeline { display: flex; gap: 14px; padding: 20px 28px; overflow-x: auto; min-height: 420px; }
+.stage { background: #e8ecf3; border-radius: 10px; width: 200px; flex-shrink: 0;
+         display: flex; flex-direction: column; }
+.stage-header { padding: 12px 14px; font-size: 13px; font-weight: 700;
+                border-radius: 10px 10px 0 0; color: white; }
+.stage-body { padding: 8px; flex: 1; }
+
+.stage.applied  .stage-header { background: #6b7a99; }
+.stage.called   .stage-header { background: #5b8dd9; }
+.stage.screened .stage-header { background: #e6a817; }
+.stage.qualified .stage-header { background: #2da44e; }
+.stage.final    .stage-header { background: #8250df; }
+.stage.hired    .stage-header { background: #1a7f37; }
+.stage.rejected .stage-header { background: #cf222e; }
+
+.count-badge { float: right; background: rgba(255,255,255,.25);
+               border-radius: 10px; padding: 1px 8px; font-size: 12px; }
+
+/* CARDS */
+.cand-card { background: white; border-radius: 8px; padding: 11px 13px;
+             margin-bottom: 8px; cursor: pointer; transition: box-shadow .15s;
+             border-left: 3px solid transparent; }
+.cand-card:hover { box-shadow: 0 2px 8px rgba(0,0,0,.12); }
+.cand-card .cname { font-size: 13px; font-weight: 600; }
+.cand-card .cmeta { font-size: 11px; color: #777; margin-top: 3px; }
+.cand-card .cscore { float: right; font-size: 12px; font-weight: 700; }
+.score-high  { color: #1a7f37; }
+.score-mid   { color: #e6a817; }
+.score-low   { color: #cf222e; }
+.booked-tag  { display: inline-block; background: #dafbe1; color: #1a7f37;
+               font-size: 10px; padding: 1px 6px; border-radius: 4px; margin-top: 4px; }
+
+/* MODAL */
+.modal-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,.5);
+                 z-index: 100; align-items: center; justify-content: center; }
+.modal-overlay.open { display: flex; }
+.modal { background: white; border-radius: 12px; width: 560px; max-height: 80vh;
+         overflow-y: auto; padding: 28px; position: relative; }
+.modal h3 { font-size: 18px; margin-bottom: 16px; }
+.modal .close { position: absolute; top: 16px; right: 20px; font-size: 20px;
+                cursor: pointer; color: #888; border: none; background: none; }
+.detail-row { display: flex; gap: 8px; margin-bottom: 10px; font-size: 14px; }
+.detail-row .lbl { color: #888; width: 110px; flex-shrink: 0; }
+.actions { display: flex; gap: 10px; margin-top: 20px; flex-wrap: wrap; }
+.action-btn { padding: 8px 16px; border-radius: 6px; border: none; cursor: pointer;
+              font-size: 13px; font-weight: 600; }
+.btn-green  { background: #dafbe1; color: #1a7f37; }
+.btn-blue   { background: #ddf4ff; color: #0969da; }
+.btn-orange { background: #fff8c5; color: #9a6700; }
+.btn-red    { background: #ffebe9; color: #cf222e; }
+
+/* JOBS BAR */
+.jobs-bar { background: white; border-radius: 10px; margin: 0 28px 20px;
+            padding: 14px 20px; box-shadow: 0 1px 4px rgba(0,0,0,.08); }
+.jobs-bar h3 { font-size: 14px; margin-bottom: 10px; color: #555; }
+.job-pills { display: flex; gap: 8px; flex-wrap: wrap; }
+.job-pill { padding: 5px 12px; border-radius: 20px; font-size: 12px; cursor: pointer;
+            border: 1px solid #d0d7de; background: white; }
+.job-pill.active { background: #1a2744; color: white; border-color: #1a2744; }
+
+/* LOADER */
+.loader { text-align: center; padding: 60px; color: #888; }
+</style>
+</head>
+<body>
+
+<nav>
+  <h1>AI Recruiter</h1>
+  <span id="last-updated"></span>
+  <div class="nav-right">
+    <a href="/api/digest" class="nav-btn" target="_blank">Weekly Digest</a>
+    <button class="nav-btn" onclick="refreshData()">Refresh</button>
+  </div>
+</nav>
+
+<div class="stats" id="stats-row">
+  <div class="stat-card"><div class="num" id="s-total">—</div><div class="lbl">Total Candidates</div></div>
+  <div class="stat-card"><div class="num" id="s-qualified">—</div><div class="lbl">Qualified (7+)</div></div>
+  <div class="stat-card"><div class="num" id="s-booked">—</div><div class="lbl">Interviews Booked</div></div>
+  <div class="stat-card"><div class="num" id="s-hired">—</div><div class="lbl">Hired</div></div>
+  <div class="stat-card"><div class="num" id="s-seq">—</div><div class="lbl">Active Sequences</div></div>
+</div>
+
+<div class="jobs-bar">
+  <h3>Filter by Job</h3>
+  <div class="job-pills" id="job-pills">
+    <button class="job-pill active" onclick="filterJob('')" data-id="">All Jobs</button>
+  </div>
+</div>
+
+<div class="pipeline" id="pipeline">
+  <div class="loader">Loading pipeline...</div>
+</div>
+
+<!-- CANDIDATE MODAL -->
+<div class="modal-overlay" id="modal">
+  <div class="modal">
+    <button class="close" onclick="closeModal()">✕</button>
+    <h3 id="m-name"></h3>
+    <div class="detail-row"><span class="lbl">Job</span><span id="m-job"></span></div>
+    <div class="detail-row"><span class="lbl">Score</span><span id="m-score"></span></div>
+    <div class="detail-row"><span class="lbl">Recommend</span><span id="m-rec"></span></div>
+    <div class="detail-row"><span class="lbl">Comp</span><span id="m-comp"></span></div>
+    <div class="detail-row"><span class="lbl">Available</span><span id="m-avail"></span></div>
+    <div class="detail-row"><span class="lbl">Source</span><span id="m-source"></span></div>
+    <div class="detail-row"><span class="lbl">Email</span><span id="m-email"></span></div>
+    <div class="detail-row"><span class="lbl">Phone</span><span id="m-phone"></span></div>
+    <div id="m-summary" style="font-size:13px;color:#555;margin-top:12px;line-height:1.6"></div>
+    <div class="actions" id="m-actions"></div>
+  </div>
+</div>
+
+<script>
+const STAGES = [
+  {key:'Applied',     label:'Applied',     cls:'applied'},
+  {key:'Called',      label:'Called',      cls:'called'},
+  {key:'Screened',    label:'Screened',    cls:'screened'},
+  {key:'Qualified',   label:'Qualified',   cls:'qualified'},
+  {key:'Final_Round', label:'Final Round', cls:'final'},
+  {key:'Hired',       label:'Hired',       cls:'hired'},
+  {key:'Rejected',    label:'Rejected',    cls:'rejected'},
+];
+
+let allCandidates = [];
+let currentJob    = '';
+
+async function loadData() {
+  const [candsResp, jobsResp, seqResp] = await Promise.all([
+    fetch('/api/candidates').then(r => r.json()),
+    fetch('/api/jobs').then(r => r.json()),
+    fetch('/api/sequence-stats').then(r => r.json())
+  ]);
+
+  allCandidates = candsResp.candidates || [];
+
+  // Update stats
+  const qualified = allCandidates.filter(c => c.score >= 7).length;
+  const booked    = allCandidates.filter(c => c.calendly_booked).length;
+  const hired     = allCandidates.filter(c => c.status === 'Hired').length;
+  document.getElementById('s-total').textContent     = allCandidates.length;
+  document.getElementById('s-qualified').textContent = qualified;
+  document.getElementById('s-booked').textContent    = booked;
+  document.getElementById('s-hired').textContent     = hired;
+  document.getElementById('s-seq').textContent       = seqResp.active || 0;
+  document.getElementById('last-updated').textContent =
+    'Updated ' + new Date().toLocaleTimeString();
+
+  // Job pills
+  const pillsEl = document.getElementById('job-pills');
+  const activeJobs = jobsResp.jobs || [];
+  activeJobs.forEach(j => {
+    const btn = document.createElement('button');
+    btn.className = 'job-pill';
+    btn.textContent = j.title;
+    btn.dataset.id  = j.job_id;
+    btn.onclick     = () => filterJob(j.job_id);
+    pillsEl.appendChild(btn);
+  });
+
+  renderPipeline(allCandidates);
+}
+
+function filterJob(jobId) {
+  currentJob = jobId;
+  document.querySelectorAll('.job-pill').forEach(p => {
+    p.classList.toggle('active', p.dataset.id === jobId);
+  });
+  const filtered = jobId ? allCandidates.filter(c => c.job_id === jobId) : allCandidates;
+  renderPipeline(filtered);
+}
+
+function renderPipeline(candidates) {
+  const pipeline = document.getElementById('pipeline');
+  pipeline.innerHTML = '';
+
+  STAGES.forEach(stage => {
+    const stageCands = candidates.filter(c => c.status === stage.key);
+    const col = document.createElement('div');
+    col.className = `stage ${stage.cls}`;
+    col.innerHTML = `
+      <div class="stage-header">${stage.label}
+        <span class="count-badge">${stageCands.length}</span>
+      </div>
+      <div class="stage-body" id="stage-${stage.key}"></div>
+    `;
+    pipeline.appendChild(col);
+
+    const body = col.querySelector('.stage-body');
+    stageCands.forEach(c => {
+      const sc = c.score;
+      const scoreClass = sc >= 7 ? 'score-high' : sc >= 5 ? 'score-mid' : 'score-low';
+      const card = document.createElement('div');
+      card.className = 'cand-card';
+      card.innerHTML = `
+        <div class="cname">${c.name}
+          <span class="cscore ${scoreClass}">${sc ? sc+'/10' : ''}</span>
+        </div>
+        <div class="cmeta">${c.job_title || ''} · ${c.source || ''}</div>
+        ${c.calendly_booked ? '<span class="booked-tag">Interview Booked</span>' : ''}
+      `;
+      card.onclick = () => openModal(c);
+      body.appendChild(card);
+    });
+  });
+}
+
+function openModal(c) {
+  document.getElementById('m-name').textContent   = c.name;
+  document.getElementById('m-job').textContent    = c.job_title || '—';
+  document.getElementById('m-score').textContent  = c.score ? c.score + '/10' : '—';
+  document.getElementById('m-rec').textContent    = c.recommend || '—';
+  document.getElementById('m-comp').textContent   = c.comp || '—';
+  document.getElementById('m-avail').textContent  = c.availability || '—';
+  document.getElementById('m-source').textContent = c.source || '—';
+  document.getElementById('m-email').textContent  = c.email || '—';
+  document.getElementById('m-phone').textContent  = c.phone || '—';
+  document.getElementById('m-summary').textContent = c.summary || '';
+
+  const actions = document.getElementById('m-actions');
+  actions.innerHTML = '';
+
+  if (c.score >= 7 && !c.calendly_booked)
+    actions.innerHTML += `<button class="action-btn btn-green" onclick="sendCalendly('${c.record_id}','${c.email}','${c.name}','${c.job_title}')">Send Calendly Link</button>`;
+  if (c.email)
+    actions.innerHTML += `<button class="action-btn btn-blue" onclick="window.open('mailto:${c.email}')">Email</button>`;
+  if (c.record_id)
+    actions.innerHTML += `<button class="action-btn btn-orange" onclick="window.open('/prep/${c.record_id}','_blank')">Prep Packet</button>`;
+  actions.innerHTML += `<button class="action-btn btn-red" onclick="rejectCandidate('${c.record_id}','${c.email}','${c.name}','${c.job_title}')">Reject</button>`;
+
+  document.getElementById('modal').classList.add('open');
+}
+
+function closeModal() {
+  document.getElementById('modal').classList.remove('open');
+}
+
+async function sendCalendly(id, email, name, job) {
+  await fetch('/api/send-calendly', {
+    method: 'POST',
+    headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({record_id: id, email, name, job_title: job})
+  });
+  alert(`Calendly link sent to ${name}`);
+  closeModal();
+}
+
+async function rejectCandidate(id, email, name, job) {
+  if (!confirm(`Reject ${name}?`)) return;
+  await fetch('/api/reject', {
+    method: 'POST',
+    headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({record_id: id, email, name, job_title: job})
+  });
+  closeModal();
+  refreshData();
+}
+
+function refreshData() {
+  document.getElementById('pipeline').innerHTML = '<div class="loader">Loading...</div>';
+  loadData();
+}
+
+document.getElementById('modal').addEventListener('click', e => {
+  if (e.target === document.getElementById('modal')) closeModal();
+});
+
+loadData();
+setInterval(loadData, 60000); // auto-refresh every 60s
+</script>
+</body>
+</html>
