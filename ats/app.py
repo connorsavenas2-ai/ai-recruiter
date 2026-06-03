@@ -615,6 +615,83 @@ def jenny_submit_video():
     return jsonify({"ok": True})
 
 
+# ── BOOKING PAGES ────────────────────────────────────────────────────────────
+
+@app.route("/book/<record_id>")
+def booking_page(record_id):
+    """Public booking page — candidates pick a slot from Connor's real availability."""
+    f = {}
+    try:
+        resp = req.get(
+            f"https://api.airtable.com/v0/{AIRTABLE_BASE_ID}/{AIRTABLE_CANDIDATES}/{record_id}",
+            headers=AT_HEADERS)
+        f = resp.json().get("fields", {})
+    except:
+        pass
+
+    from config import YOUR_NAME, YOUR_EMAIL
+    initial = (YOUR_NAME or "C")[0].upper()
+
+    return render_template("booking.html",
+        record_id        = record_id,
+        candidate_name   = f.get("Name", ""),
+        candidate_email  = f.get("Email", ""),
+        candidate_phone  = f.get("Phone", ""),
+        job_title        = f.get("Job_Title", "Interview"),
+        company_name     = COMPANY_NAME,
+        interviewer_name = YOUR_NAME,
+        interviewer_initial = initial,
+        contact_email    = os.getenv("YOUR_EMAIL", "")
+    )
+
+
+@app.route("/book/slots")
+def booking_slots():
+    """Returns available time slots from Google Calendar (or static fallback)."""
+    try:
+        from booking import get_available_slots
+        slots = get_available_slots(days_ahead=10, slot_minutes=30)
+        return jsonify({"slots": slots})
+    except Exception as e:
+        return jsonify({"slots": [], "error": str(e)})
+
+
+@app.route("/book/confirm", methods=["POST"])
+def booking_confirm():
+    """Confirms a booking — creates Google Calendar event, sends emails/SMS."""
+    import threading
+    data = request.json or {}
+
+    def process():
+        from booking import book_slot
+        book_slot(
+            start_time      = data.get("start", ""),
+            end_time        = data.get("end", ""),
+            candidate_name  = data.get("name", ""),
+            candidate_email = data.get("email", ""),
+            job_title       = data.get("job_title", "Interview"),
+            record_id       = data.get("record_id", "")
+        )
+
+    result = {"ok": True, "display_time": "your scheduled time", "zoom_link": ""}
+    try:
+        from booking import book_slot, get_available_slots
+        from datetime import datetime, timezone
+        # Run synchronously so we can return the zoom link
+        res = book_slot(
+            start_time      = data.get("start", ""),
+            end_time        = data.get("end", ""),
+            candidate_name  = data.get("name", ""),
+            candidate_email = data.get("email", ""),
+            job_title       = data.get("job_title", "Interview"),
+            record_id       = data.get("record_id", "")
+        )
+        result.update(res)
+    except Exception as e:
+        result["error"] = str(e)
+    return jsonify(result)
+
+
 # ── PWA MANIFEST ──────────────────────────────────────────────────────────────
 
 @app.route("/manifest.json")

@@ -51,22 +51,56 @@ def _parse_dt(dt_str: str) -> datetime | None:
 
 # ── SEND CALENDLY LINK ────────────────────────────────────────────────────────
 
+def get_booking_link(record_id: str = "") -> str:
+    """
+    Returns the best available booking link:
+    1. Built-in booking page (uses Google Calendar, fully free)
+    2. Calendly link (if configured)
+    3. Email fallback
+    """
+    webhook_base = os.getenv("WEBHOOK_BASE_URL", "")
+    if record_id and webhook_base:
+        return f"{webhook_base}/book/{record_id}"
+    if CALENDLY_BOOKING_LINK:
+        return CALENDLY_BOOKING_LINK
+    return f"mailto:{os.getenv('YOUR_EMAIL', '')}"
+
+
 def send_calendly_to_qualified(record_id: str, name: str, email: str,
                                phone: str, job_title: str):
-    """Send Calendly booking link immediately when candidate qualifies."""
+    """Send booking link immediately when candidate qualifies."""
+    link = get_booking_link(record_id)
+
     # Email
-    email_out.send_qualified_email(name, email, job_title, "")
+    from email_outreach import _send
+    first = name.split()[0]
+    subject = f"You're moving forward! Book your interview — {job_title}"
+    html = f"""
+<p>Hi {first},</p>
+<p>Great news — after reviewing your application for the <strong>{job_title}</strong> role
+at {COMPANY_NAME}, we'd love to move you to a final interview with <strong>{os.getenv('YOUR_NAME','the hiring manager')}</strong>!</p>
+<p>It's a quick 30-minute video call. Pick a time that works for you:</p>
+<p style="text-align:center;margin:24px 0">
+  <a href="{link}" style="background:#2563eb;color:white;padding:13px 28px;
+     border-radius:8px;font-weight:700;font-size:15px;text-decoration:none;display:inline-block">
+    Book My Interview →
+  </a>
+</p>
+<p style="font-size:12px;color:#94a3b8">Or copy this link: {link}</p>
+<p>Looking forward to speaking with you!</p>
+<p>Jenny | {COMPANY_NAME}</p>"""
+    _send(email, subject, html)
 
     # SMS
     if SMS_AVAILABLE and phone:
-        msg = (f"Hi {name.split()[0]}! Jenny here from {COMPANY_NAME} 🎉 "
-               f"Great news — you've been selected to interview for the {job_title} role. "
-               f"Book your 30-min final interview here: {CALENDLY_BOOKING_LINK}")
+        msg = (f"Hi {first}! 🎉 Jenny from {COMPANY_NAME} — "
+               f"you've been selected to interview for {job_title}! "
+               f"Book your 30-min slot here: {link}")
         send_sms(phone, msg)
 
     # Mark in Airtable
     ats.update_candidate(record_id, {"Status": "Qualified"})
-    print(f"[SCHEDULE] Sent Calendly link to {name}")
+    print(f"[SCHEDULE] Sent booking link to {name}: {link}")
 
 
 # ── BOOKING FOLLOW-UPS ────────────────────────────────────────────────────────

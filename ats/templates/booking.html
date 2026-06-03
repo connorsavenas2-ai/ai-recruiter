@@ -1,0 +1,268 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Book Your Interview — {{ company_name }}</title>
+<style>
+*, *::before, *::after { box-sizing:border-box; margin:0; padding:0; }
+body {
+  font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
+  background:linear-gradient(135deg,#0f1e3d 0%,#1a3a6e 60%,#0f1e3d 100%);
+  min-height:100vh; display:flex; align-items:center; justify-content:center; padding:24px;
+}
+.card {
+  background:white; border-radius:16px; width:100%; max-width:560px;
+  overflow:hidden; box-shadow:0 30px 80px rgba(0,0,0,.4);
+}
+.header {
+  background:linear-gradient(135deg,#0f1e3d,#1e40af); color:white; padding:28px 32px;
+  display:flex; gap:16px; align-items:center;
+}
+.header-avatar {
+  width:56px; height:56px; border-radius:50%; border:2px solid rgba(255,255,255,.3);
+  background:rgba(255,255,255,.15); display:flex; align-items:center; justify-content:center;
+  font-size:24px; font-weight:900; flex-shrink:0;
+}
+.header-text h1 { font-size:18px; font-weight:800; margin-bottom:3px; }
+.header-text p  { font-size:13px; opacity:.7; }
+.body { padding:28px 32px; }
+.section-title {
+  font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.8px;
+  color:#94a3b8; margin-bottom:14px;
+}
+/* Slot picker */
+.slots-grid {
+  display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-bottom:24px;
+  max-height:320px; overflow-y:auto; padding-right:4px;
+}
+.slot {
+  padding:10px 14px; border:1.5px solid #e2e8f0; border-radius:8px; cursor:pointer;
+  transition:all .15s; font-size:13px; color:#334155; font-weight:500;
+  background:white;
+}
+.slot:hover    { border-color:#2563eb; background:#eff6ff; color:#1d4ed8; }
+.slot.selected { border-color:#2563eb; background:#2563eb; color:white; }
+.slot-day  { font-weight:700; font-size:12px; margin-bottom:2px; }
+.slot-time { font-size:13px; }
+
+/* Confirm section */
+.confirm-section { display:none; }
+.confirm-section.show { display:block; }
+.selected-time-display {
+  background:#f0f9ff; border:1px solid #bae6fd; border-radius:8px;
+  padding:14px 18px; margin-bottom:20px; font-size:14px;
+}
+.selected-time-display strong { color:#0369a1; font-size:16px; display:block; margin-bottom:2px; }
+.form-group { margin-bottom:14px; }
+label { display:block; font-size:12px; font-weight:700; color:#475569;
+        text-transform:uppercase; letter-spacing:.4px; margin-bottom:5px; }
+input { width:100%; padding:10px 13px; border:1.5px solid #e2e8f0; border-radius:7px;
+        font-size:14px; outline:none; }
+input:focus { border-color:#2563eb; }
+input[readonly] { background:#f8fafc; color:#64748b; }
+.btn {
+  width:100%; padding:13px; background:linear-gradient(135deg,#1d4ed8,#2563eb);
+  color:white; border:none; border-radius:8px; font-size:15px; font-weight:700;
+  cursor:pointer; transition:all .15s;
+}
+.btn:hover { transform:translateY(-1px); box-shadow:0 6px 20px rgba(37,99,235,.35); }
+.btn:disabled { opacity:.5; transform:none; cursor:not-allowed; }
+.btn-back {
+  width:100%; padding:10px; background:transparent; color:#64748b;
+  border:1.5px solid #e2e8f0; border-radius:8px; font-size:13px; font-weight:600;
+  cursor:pointer; margin-top:8px;
+}
+.duration-badge {
+  display:inline-flex; align-items:center; gap:6px; background:#f0fdf4;
+  color:#16a34a; border-radius:20px; padding:4px 12px; font-size:12px;
+  font-weight:700; margin-bottom:20px;
+}
+
+/* Success screen */
+.success { display:none; text-align:center; padding:48px 32px; }
+.success.show { display:block; }
+.success .check { font-size:64px; margin-bottom:16px; }
+.success h2 { font-size:22px; font-weight:800; color:#0f172a; margin-bottom:8px; }
+.success p  { font-size:14px; color:#64748b; line-height:1.7; }
+.success .zoom-box {
+  background:#f0fdf4; border:1px solid #bbf7d0; border-radius:8px;
+  padding:14px 18px; margin:16px 0; font-size:13px; color:#15803d;
+}
+.no-slots { text-align:center; padding:40px 20px; color:#64748b; }
+.no-slots p { font-size:14px; line-height:1.7; }
+.no-slots a { color:#2563eb; font-weight:700; }
+
+/* Loading */
+.loading { text-align:center; padding:40px; color:#94a3b8; }
+.spinner { width:32px; height:32px; border:3px solid #e2e8f0;
+           border-top-color:#2563eb; border-radius:50%;
+           animation:spin .8s linear infinite; margin:0 auto 12px; }
+@keyframes spin { to { transform:rotate(360deg); } }
+</style>
+</head>
+<body>
+<div class="card">
+  <div class="header">
+    <div class="header-avatar">{{ interviewer_initial }}</div>
+    <div class="header-text">
+      <h1>Book Your Interview</h1>
+      <p>{{ job_title }} · {{ company_name }}</p>
+    </div>
+  </div>
+
+  <div class="body">
+    <!-- Loading -->
+    <div class="loading" id="loading">
+      <div class="spinner"></div>
+      <p>Loading available times…</p>
+    </div>
+
+    <!-- Slot picker -->
+    <div id="picker-section" style="display:none">
+      <div class="duration-badge">⏱ 30-minute video interview</div>
+      <div class="section-title">Pick a time that works for you</div>
+      <div class="slots-grid" id="slots-grid"></div>
+      <div id="no-slots-msg" class="no-slots" style="display:none">
+        <p>No times are currently available online.<br>
+           Email <a href="mailto:{{ contact_email }}">{{ contact_email }}</a> to schedule directly.</p>
+      </div>
+    </div>
+
+    <!-- Confirm form -->
+    <div class="confirm-section" id="confirm-section">
+      <div class="section-title">Confirm your details</div>
+      <div class="selected-time-display">
+        <strong id="selected-display">—</strong>
+        30-minute video interview with {{ interviewer_name }}
+      </div>
+      <form id="confirm-form" onsubmit="confirmBooking(event)">
+        <input type="hidden" id="selected-start" name="start">
+        <input type="hidden" id="selected-end"   name="end">
+        <div class="form-group">
+          <label>Your Name</label>
+          <input name="name" value="{{ candidate_name }}"
+                 {% if candidate_name %}readonly{% endif %} required>
+        </div>
+        <div class="form-group">
+          <label>Email Address</label>
+          <input name="email" type="email" value="{{ candidate_email }}"
+                 {% if candidate_email %}readonly{% endif %} required>
+        </div>
+        <div class="form-group">
+          <label>Phone (for reminders)</label>
+          <input name="phone" type="tel" value="{{ candidate_phone }}" placeholder="+1 (555) 000-0000">
+        </div>
+        <button type="submit" class="btn" id="confirm-btn">Confirm Interview →</button>
+        <button type="button" class="btn-back" onclick="backToPicker()">← Choose a different time</button>
+      </form>
+    </div>
+
+    <!-- Success -->
+    <div class="success" id="success-screen">
+      <div class="check">🎉</div>
+      <h2>You're booked!</h2>
+      <p>Your interview for <strong>{{ job_title }}</strong> is confirmed.<br>
+         Check your email for details and a calendar invite.</p>
+      <div class="zoom-box" id="zoom-info" style="display:none">
+        📹 <strong>Google Meet link:</strong><br>
+        <a id="zoom-link-el" href="#" target="_blank" style="word-break:break-all"></a>
+      </div>
+      <p id="booked-time" style="margin-top:12px;font-weight:700;color:#0f172a"></p>
+      <p style="margin-top:16px;font-size:12px;color:#94a3b8">
+        You'll receive a reminder 24 hours and 1 hour before your interview.
+      </p>
+    </div>
+  </div>
+</div>
+
+<script>
+const RECORD_ID = '{{ record_id }}';
+let selectedSlot = null;
+
+async function loadSlots() {
+  try {
+    const r = await fetch('/book/slots');
+    const d = await r.json();
+    document.getElementById('loading').style.display = 'none';
+    document.getElementById('picker-section').style.display = 'block';
+
+    const grid = document.getElementById('slots-grid');
+    const slots = d.slots || [];
+
+    if (!slots.length) {
+      document.getElementById('no-slots-msg').style.display = 'block';
+      return;
+    }
+
+    slots.forEach((slot, i) => {
+      // Parse display: "Wednesday, June 10 at 2:00 PM ET"
+      const parts = slot.display.split(' at ');
+      const day   = parts[0];
+      const time  = parts[1] || slot.display;
+      const el    = document.createElement('div');
+      el.className = 'slot';
+      el.innerHTML = `<div class="slot-day">${day}</div><div class="slot-time">${time}</div>`;
+      el.onclick   = () => selectSlot(slot, el);
+      grid.appendChild(el);
+    });
+  } catch(e) {
+    document.getElementById('loading').innerHTML =
+      '<p style="color:#dc2626">Could not load availability. Please email us to schedule.</p>';
+  }
+}
+
+function selectSlot(slot, el) {
+  document.querySelectorAll('.slot').forEach(s => s.classList.remove('selected'));
+  el.classList.add('selected');
+  selectedSlot = slot;
+
+  document.getElementById('selected-display').textContent = slot.display;
+  document.getElementById('selected-start').value = slot.start;
+  document.getElementById('selected-end').value   = slot.end;
+
+  document.getElementById('picker-section').style.display = 'none';
+  document.getElementById('confirm-section').classList.add('show');
+}
+
+function backToPicker() {
+  document.getElementById('confirm-section').classList.remove('show');
+  document.getElementById('picker-section').style.display = 'block';
+}
+
+async function confirmBooking(e) {
+  e.preventDefault();
+  const btn  = document.getElementById('confirm-btn');
+  btn.textContent = 'Booking…'; btn.disabled = true;
+
+  const fd = new FormData(e.target);
+  const r  = await fetch('/book/confirm', {
+    method: 'POST',
+    headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({
+      start:     fd.get('start'),
+      end:       fd.get('end'),
+      name:      fd.get('name'),
+      email:     fd.get('email'),
+      phone:     fd.get('phone'),
+      record_id: RECORD_ID,
+      job_title: '{{ job_title }}'
+    })
+  });
+
+  const d = await r.json();
+  document.getElementById('confirm-section').classList.remove('show');
+  document.getElementById('success-screen').classList.add('show');
+  document.getElementById('booked-time').textContent = d.display_time || '';
+
+  if (d.zoom_link) {
+    document.getElementById('zoom-info').style.display = 'block';
+    const zl = document.getElementById('zoom-link-el');
+    zl.href = d.zoom_link; zl.textContent = d.zoom_link;
+  }
+}
+
+loadSlots();
+</script>
+</body>
+</html>
